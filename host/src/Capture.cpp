@@ -134,6 +134,7 @@ bool Capture::Init(const OutputInfo& out, UINT encodeW, UINT encodeH) {
     if (SUCCEEDED(device_.As(&mt))) mt->SetMultithreadProtected(TRUE);
     if (!HR_OK(device_.As(&vdev_)) || !HR_OK(ctx_.As(&vctx_))) return false;
 
+    Log("Capture: D3D11 device ready, starting duplication");
     ComPtr<IDXGIOutput5> output5;
     DXGI_FORMAT formats[] = {DXGI_FORMAT_B8G8R8A8_UNORM};
     HRESULT hr = E_NOINTERFACE;

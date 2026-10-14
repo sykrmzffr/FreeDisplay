@@ -21,6 +21,7 @@
 #include "Settings.h"
 #include "Tray.h"
 #include "Util.h"
+#include "VirtualMonitor.h"
 #include <shellapi.h>
 #include <share.h>
 
@@ -117,7 +118,8 @@ bool RecvMsg(SOCKET s, uint8_t& type, std::vector<uint8_t>& payload) {
 }
 
 SOCKET Listen(uint16_t port) {
-    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    // Not inheritable: child processes (the adb server) must not keep the port open.
+    SOCKET s = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED | WSA_FLAG_NO_HANDLE_INHERIT);
     if (s == INVALID_SOCKET) return s;
     BOOL exclusive = TRUE;
     setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<char*>(&exclusive), sizeof exclusive);
@@ -185,18 +187,6 @@ bool PrepareDevice(const Adb& adb, const std::string& serial, const Options& opt
 
 // ---- streaming session ----------------------------------------------------
 
-// Switches a display to `hz` at its current resolution, if that mode exists.
-void SetRefreshRate(const std::wstring& gdiName, UINT hz) {
-    DEVMODEW dm{};
-    dm.dmSize = sizeof dm;
-    if (!EnumDisplaySettingsW(gdiName.c_str(), ENUM_CURRENT_SETTINGS, &dm)) return;
-    if (dm.dmDisplayFrequency == hz) return;
-    dm.dmDisplayFrequency = hz;
-    dm.dmFields = DM_DISPLAYFREQUENCY;
-    LONG rc = ChangeDisplaySettingsExW(gdiName.c_str(), &dm, nullptr, 0, nullptr);
-    Log("Set %s to %u Hz: %s", Narrow(gdiName).c_str(), hz, rc == DISP_CHANGE_SUCCESSFUL ? "ok" : "not supported");
-}
-
 UINT AutoBitrate(UINT w, UINT h, UINT fps) {
     double bps = double(w) * h * fps * 0.07;
     return UINT(std::clamp(bps, 8e6, 40e6));
@@ -221,18 +211,26 @@ void RunSession(SOCKET sock, const Options& opt) {
     }
     Log("Tablet: %s, %ux%u @ %u dpi, up to %u Hz", name.c_str(), tabW, tabH, dpi, tabHz);
 
+    // Show the virtual monitor at the tablet's resolution and refresh rate (capped by --fps).
+    UINT fps = std::min<UINT>(opt.fps, tabHz ? tabHz : 60);
+    if (opt.display < 0 && !VirtualMonitor::Find().empty()) {
+        VirtualMonitor::Attach(tabW, tabH, fps);
+        for (int i = 0; i < 40 && !VirtualMonitor::IsAttached(); i++) Sleep(100);
+        Sleep(300); // let DXGI see the new output
+        Log("Virtual monitor ready (attached=%d)", int(VirtualMonitor::IsAttached()));
+    }
+
     OutputInfo output;
-    if (!ChooseOutput(opt.display, output)) {
+    bool chosen = ChooseOutput(opt.display, output);
+    Log("Output chosen: %s", chosen ? Narrow(output.gdiName).c_str() : "(none)");
+    if (!chosen) {
         Log("No display to capture");
         return;
     }
-    if (output.monitorName.find(L"VDD") == std::wstring::npos && opt.display < 0)
-        Log("Virtual Display Driver monitor not active; mirroring %s instead",
-            Narrow(output.gdiName).c_str());
-
-    // Run the virtual monitor and the stream at the tablet's refresh rate (capped by --fps).
-    UINT fps = std::min<UINT>(opt.fps, tabHz ? tabHz : 60);
-    if (output.monitorName.find(L"VDD") != std::wstring::npos) SetRefreshRate(output.gdiName, fps);
+    if (output.monitorName.find(L"VDD") == std::wstring::npos && opt.display < 0) {
+        Log("Virtual Display Driver monitor not available; mirroring %s instead", Narrow(output.gdiName).c_str());
+        Status(L"Mirroring the main screen (Virtual Display Driver not found)", true);
+    }
 
     int scalePct = opt.scalePct > 0 ? opt.scalePct : AppSettings().qualityPct.load();
     UINT w = UINT((output.desktop.right - output.desktop.left) * scalePct / 100) & ~1u;
@@ -419,6 +417,25 @@ void PrintOutputs() {
                o.primary ? "  [primary]" : "");
 }
 
+// True when SuperDisplay's Windows service is running. Its bundled adb is an
+// older version that keeps restarting the adb server and breaks our tunnel.
+bool SuperDisplayRunning() {
+    static ULONGLONG checkedAt = 0;
+    static bool running = false;
+    if (checkedAt && GetTickCount64() - checkedAt < 10000) return running;
+    checkedAt = GetTickCount64();
+    running = false;
+    if (SC_HANDLE scm = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT)) {
+        if (SC_HANDLE svc = OpenServiceW(scm, L"SuperDisplay", SERVICE_QUERY_STATUS)) {
+            SERVICE_STATUS st{};
+            running = QueryServiceStatus(svc, &st) && st.dwCurrentState == SERVICE_RUNNING;
+            CloseServiceHandle(svc);
+        }
+        CloseServiceHandle(scm);
+    }
+    return running;
+}
+
 // Detects the tablet, prepares it and runs streaming sessions until g_quit.
 void HostLoop(Options opt) {
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -442,20 +459,43 @@ void HostLoop(Options opt) {
     }
 
     std::string current;
-    bool waitingLogged = false;
+    std::string lastState = "?";
+    ULONGLONG lastSeen = GetTickCount64();
+    bool manageMonitor = opt.display < 0;
     while (!g_quit) {
+        if (SuperDisplayRunning()) {
+            static bool warned = false;
+            if (!warned) {
+                Log("The SuperDisplay service is running; its adb conflicts with ours");
+                Status(L"SuperDisplay's service is running and blocks USB. Stop or uninstall SuperDisplay.", true);
+            }
+            warned = true;
+        }
         std::string serial = adb.FirstReadyDevice();
         if (serial.empty()) {
-            if (!waitingLogged) {
-                Log("Waiting for a tablet (USB cable, USB debugging enabled)...");
-                Status(L"Waiting for tablet (plug in USB)");
+            std::string state = adb.FirstDeviceState();
+            if (state != lastState) {
+                if (state == "unauthorized") {
+                    Log("Tablet found but USB debugging is not authorized for this PC");
+                    Status(L"On the tablet, tap Allow on the \"Allow USB debugging?\" prompt", true);
+                } else if (!state.empty()) {
+                    Log("Tablet found in state '%s'", state.c_str());
+                    Status(L"Tablet found but not ready (" + Widen(state) + L"); reconnect the cable");
+                } else {
+                    Log("Waiting for a tablet (USB cable, USB debugging enabled)...");
+                    Status(L"Waiting for tablet (plug in USB)");
+                }
+                lastState = state;
             }
-            waitingLogged = true;
             current.clear();
+            // Unplugged: take the virtual monitor away so no windows are stranded on it.
+            if (manageMonitor && GetTickCount64() - lastSeen > 3000 && VirtualMonitor::IsAttached())
+                VirtualMonitor::Detach();
             Sleep(1000);
             continue;
         }
-        waitingLogged = false;
+        lastState = "device";
+        lastSeen = GetTickCount64();
         if (serial != current) {
             Log("Tablet connected: %s", serial.c_str());
             Status(L"Tablet connected, starting app...");
@@ -471,8 +511,10 @@ void HostLoop(Options opt) {
         Log("Tablet app connected");
         RunSession(c, opt);
         closesocket(c);
+        lastSeen = GetTickCount64();
         if (!g_quit) Status(L"Tablet connected, waiting for the app");
     }
+    if (manageMonitor) VirtualMonitor::Detach();
     closesocket(listener);
     CoUninitialize();
 }
@@ -548,9 +590,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     }
 
     // Keep the previous run's log next to the current one.
+    // A previous instance that is still exiting may hold the file for a moment.
     std::wstring logPath = Settings::DataDir() + L"host.log";
-    MoveFileExW(logPath.c_str(), (Settings::DataDir() + L"host.previous.log").c_str(), MOVEFILE_REPLACE_EXISTING);
-    g_logFile = _wfsopen(logPath.c_str(), L"w", _SH_DENYWR);
+    for (int i = 0; i < 20 && !g_logFile; i++) {
+        MoveFileExW(logPath.c_str(), (Settings::DataDir() + L"host.previous.log").c_str(), MOVEFILE_REPLACE_EXISTING);
+        g_logFile = _wfsopen(logPath.c_str(), L"wN", _SH_DENYWR); // N: not inherited by children
+        if (!g_logFile) Sleep(100);
+    }
     AppSettings().Load();
 
     MFStartup(MF_VERSION, MFSTARTUP_LITE);

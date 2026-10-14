@@ -26,17 +26,35 @@ int Adb::Run(const std::wstring& args, std::string* out, DWORD timeoutMs) const 
     HANDLE rd = nullptr, wr = nullptr;
     if (!CreatePipe(&rd, &wr, &sa, 0)) return -1;
     SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
+    HANDLE nul = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
 
-    STARTUPINFOW si{sizeof si};
-    si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdOutput = wr;
-    si.hStdError = wr;
-    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    // Pass the child only its std handles. `adb` may start the long-lived adb
+    // server, which would otherwise inherit our listening socket and log file
+    // and keep them open after we exit.
+    HANDLE inherit[] = {wr, nul};
+    SIZE_T attrSize = 0;
+    InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
+    std::vector<uint8_t> attrBuf(attrSize);
+    auto attrs = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attrBuf.data());
+    InitializeProcThreadAttributeList(attrs, 1, 0, &attrSize);
+    UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherit,
+                              (nul != INVALID_HANDLE_VALUE ? 2 : 1) * sizeof(HANDLE), nullptr, nullptr);
+
+    STARTUPINFOEXW si{};
+    si.StartupInfo.cb = sizeof si;
+    si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    si.StartupInfo.hStdOutput = wr;
+    si.StartupInfo.hStdError = wr;
+    si.StartupInfo.hStdInput = nul;
+    si.lpAttributeList = attrs;
     PROCESS_INFORMATION pi{};
     std::wstring cmd = L"\"" + path_ + L"\" " + args;
-    BOOL started = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
-                                  nullptr, nullptr, &si, &pi);
+    BOOL started = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE,
+                                  CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr,
+                                  &si.StartupInfo, &pi);
+    DeleteProcThreadAttributeList(attrs);
     CloseHandle(wr);
+    if (nul != INVALID_HANDLE_VALUE) CloseHandle(nul);
     if (!started) {
         CloseHandle(rd);
         return -1;
@@ -64,9 +82,10 @@ int Adb::RunOn(const std::string& serial, const std::wstring& args, std::string*
     return Run(L"-s " + Widen(serial) + L" " + args, out, timeoutMs);
 }
 
-std::string Adb::FirstReadyDevice() const {
-    std::string out;
-    if (Run(L"devices", &out) != 0) return {};
+namespace {
+// Parses `adb devices` into (serial, state) pairs.
+std::vector<std::pair<std::string, std::string>> ParseDevices(const std::string& out) {
+    std::vector<std::pair<std::string, std::string>> devices;
     std::istringstream lines(out);
     std::string line;
     while (std::getline(lines, line)) {
@@ -74,7 +93,23 @@ std::string Adb::FirstReadyDevice() const {
         if (tab == std::string::npos) continue;
         std::string state = line.substr(tab + 1);
         while (!state.empty() && (state.back() == '\r' || state.back() == ' ')) state.pop_back();
-        if (state == "device") return line.substr(0, tab);
+        devices.emplace_back(line.substr(0, tab), state);
     }
+    return devices;
+}
+} // namespace
+
+std::string Adb::FirstReadyDevice() const {
+    std::string out;
+    if (Run(L"devices", &out) != 0) return {};
+    for (auto& [serial, state] : ParseDevices(out))
+        if (state == "device") return serial;
     return {};
+}
+
+std::string Adb::FirstDeviceState() const {
+    std::string out;
+    if (Run(L"devices", &out) != 0) return {};
+    auto devices = ParseDevices(out);
+    return devices.empty() ? std::string() : devices.front().second;
 }

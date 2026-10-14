@@ -16,6 +16,10 @@ public:
     // Serial of the first device in the "device" state, or empty.
     std::string FirstReadyDevice() const;
 
+    // State of the first attached device ("device", "unauthorized", "offline", ...),
+    // or empty when none is attached.
+    std::string FirstDeviceState() const;
+
     // Runs `adb -s <serial> <args>`.
     int RunOn(const std::string& serial, const std::wstring& args, std::string* out = nullptr,
               DWORD timeoutMs = 30000) const;

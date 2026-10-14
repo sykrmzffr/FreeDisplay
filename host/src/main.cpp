@@ -15,6 +15,7 @@
 #include "Adb.h"
 #include "Capture.h"
 #include "Encoder.h"
+#include "NvencEncoder.h"
 #include "Input.h"
 #include "Protocol.h"
 #include "Util.h"
@@ -31,7 +32,7 @@ struct Options {
     UINT bitrateMbps = 0; // 0: automatic
     int scalePct = 75;    // encode size as % of the monitor size (lower = less latency)
     int speed = -1;       // encoder quality/speed 0 (fastest) .. 100 (best); -1: default
-    std::wstring encoder = L"auto"; // auto | amf | mf
+    std::wstring encoder = L"auto"; // auto | amf | nvenc | mf
     bool install = true;
 };
 
@@ -41,8 +42,11 @@ std::unique_ptr<VideoEncoder> OpenEncoder(const Options& opt, Capture& cap, UINT
                                           UINT fps, UINT bitrate) {
     std::vector<std::unique_ptr<VideoEncoder>> candidates;
     bool amd = cap.AdapterVendor() == 0x1002;
-    if (opt.encoder == L"amf" || (opt.encoder == L"auto" && amd)) candidates.push_back(CreateAmfEncoder());
-    if (opt.encoder != L"amf") candidates.push_back(std::make_unique<MfEncoder>());
+    bool nvidia = cap.AdapterVendor() == 0x10DE;
+    bool any = opt.encoder == L"auto";
+    if (opt.encoder == L"amf" || (any && amd)) candidates.push_back(CreateAmfEncoder());
+    if (opt.encoder == L"nvenc" || (any && nvidia)) candidates.push_back(std::make_unique<NvencEncoder>());
+    if (opt.encoder == L"mf" || any) candidates.push_back(std::make_unique<MfEncoder>());
     for (auto& enc : candidates) {
         if (enc->Init(cap.Device(), cap.AdapterLuid(), w, h, fps, bitrate, opt.speed)) {
             Log("Encoder: %s", enc->Name());
@@ -427,7 +431,7 @@ int wmain(int argc, wchar_t** argv) {
             opt.install = false;
         } else {
             printf("Usage: FreeDisplayHost [--list] [--display N] [--fps N] [--bitrate Mbps]\n"
-                   "                       [--scale PERCENT] [--speed 0-100] [--encoder auto|amf|mf]\n                       [--no-install]\n");
+                   "                       [--scale PERCENT] [--speed 0-100] [--encoder auto|amf|nvenc|mf]\n                       [--no-install]\n");
             return 1;
         }
     }

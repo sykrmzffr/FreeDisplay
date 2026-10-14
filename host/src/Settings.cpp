@@ -43,9 +43,6 @@ void Settings::Load() {
     int q = GetPrivateProfileIntW(kSection, L"Quality", 75, IniPath().c_str());
     qualityPct = (q == 100 || q == 75 || q == 50) ? q : 75;
     startWithWindows = ReadBool(L"StartWithWindows", false);
-    hasMonitorPos = ReadBool(L"HasMonitorPosition", false);
-    monitorX = long(int(GetPrivateProfileIntW(kSection, L"MonitorX", 0, IniPath().c_str())));
-    monitorY = long(int(GetPrivateProfileIntW(kSection, L"MonitorY", 0, IniPath().c_str())));
 }
 
 void Settings::Save() const {
@@ -53,9 +50,6 @@ void Settings::Save() const {
     WriteInt(L"Pen", pen ? 1 : 0);
     WriteInt(L"Quality", qualityPct);
     WriteInt(L"StartWithWindows", startWithWindows ? 1 : 0);
-    WriteInt(L"HasMonitorPosition", hasMonitorPos ? 1 : 0);
-    WriteInt(L"MonitorX", int(monitorX));
-    WriteInt(L"MonitorY", int(monitorY));
 }
 
 bool Settings::ApplyStartWithWindows(bool enable) {

@@ -211,26 +211,24 @@ void RunSession(SOCKET sock, const Options& opt) {
     }
     Log("Tablet: %s, %ux%u @ %u dpi, up to %u Hz", name.c_str(), tabW, tabH, dpi, tabHz);
 
-    // Show the virtual monitor at the tablet's resolution and refresh rate (capped by --fps).
-    UINT fps = std::min<UINT>(opt.fps, tabHz ? tabHz : 60);
-    if (opt.display < 0 && !VirtualMonitor::Find().empty()) {
-        VirtualMonitor::Attach(tabW, tabH, fps);
-        for (int i = 0; i < 40 && !VirtualMonitor::IsAttached(); i++) Sleep(100);
-        Sleep(300); // let DXGI see the new output
-        Log("Virtual monitor ready (attached=%d)", int(VirtualMonitor::IsAttached()));
-    }
-
     OutputInfo output;
-    bool chosen = ChooseOutput(opt.display, output);
-    Log("Output chosen: %s", chosen ? Narrow(output.gdiName).c_str() : "(none)");
-    if (!chosen) {
+    if (!ChooseOutput(opt.display, output)) {
         Log("No display to capture");
         return;
     }
-    if (output.monitorName.find(L"VDD") == std::wstring::npos && opt.display < 0) {
-        Log("Virtual Display Driver monitor not available; mirroring %s instead", Narrow(output.gdiName).c_str());
-        Status(L"Mirroring the main screen (Virtual Display Driver not found)", true);
+    bool isVdd = output.monitorName.find(L"VDD") != std::wstring::npos;
+    if (!isVdd && opt.display < 0) {
+        bool installed = !VirtualMonitor::Find().empty();
+        Log("Virtual Display Driver monitor %s; mirroring %s instead", installed ? "is disabled" : "not installed",
+            Narrow(output.gdiName).c_str());
+        Status(installed ? L"Mirroring the main screen: enable the Virtual Display Driver monitor to extend"
+                         : L"Mirroring the main screen: install Virtual Display Driver to extend",
+               true);
     }
+
+    // Run the virtual monitor and the stream at the tablet's refresh rate (capped by --fps).
+    UINT fps = std::min<UINT>(opt.fps, tabHz ? tabHz : 60);
+    if (isVdd) VirtualMonitor::SetRefreshRate(output.gdiName, fps);
 
     int scalePct = opt.scalePct > 0 ? opt.scalePct : AppSettings().qualityPct.load();
     UINT w = UINT((output.desktop.right - output.desktop.left) * scalePct / 100) & ~1u;
@@ -460,8 +458,6 @@ void HostLoop(Options opt) {
 
     std::string current;
     std::string lastState = "?";
-    ULONGLONG lastSeen = GetTickCount64();
-    bool manageMonitor = opt.display < 0;
     while (!g_quit) {
         if (SuperDisplayRunning()) {
             static bool warned = false;
@@ -488,14 +484,10 @@ void HostLoop(Options opt) {
                 lastState = state;
             }
             current.clear();
-            // Unplugged: take the virtual monitor away so no windows are stranded on it.
-            if (manageMonitor && GetTickCount64() - lastSeen > 3000 && VirtualMonitor::IsAttached())
-                VirtualMonitor::Detach();
             Sleep(1000);
             continue;
         }
         lastState = "device";
-        lastSeen = GetTickCount64();
         if (serial != current) {
             Log("Tablet connected: %s", serial.c_str());
             Status(L"Tablet connected, starting app...");
@@ -511,10 +503,8 @@ void HostLoop(Options opt) {
         Log("Tablet app connected");
         RunSession(c, opt);
         closesocket(c);
-        lastSeen = GetTickCount64();
         if (!g_quit) Status(L"Tablet connected, waiting for the app");
     }
-    if (manageMonitor) VirtualMonitor::Detach();
     closesocket(listener);
     CoUninitialize();
 }

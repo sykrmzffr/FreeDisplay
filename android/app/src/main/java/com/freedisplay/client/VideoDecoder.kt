@@ -2,6 +2,7 @@ package com.freedisplay.client
 
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.os.Build
 import android.util.Log
@@ -14,9 +15,10 @@ import android.view.Surface
 class VideoDecoder(
     private val surface: Surface,
     private val onStarted: (String) -> Unit,
-    private val onDecoded: (Long, Int) -> Unit,
+    private val onDecoded: (ptsUs: Long, decodeUs: Int, inputWaitUs: Int) -> Unit,
 ) {
-    private val queuedAt = java.util.concurrent.ConcurrentHashMap<Long, Long>()
+    /** pts -> (nanoTime the frame finished arriving, nanoTime it was queued to the codec) */
+    private val queuedAt = java.util.concurrent.ConcurrentHashMap<Long, Pair<Long, Long>>()
     private var codec: MediaCodec? = null
     private var outputThread: Thread? = null
     @Volatile private var running = false
@@ -30,7 +32,8 @@ class VideoDecoder(
     }
 
     /** Returns false when the decoder needs a keyframe to (re)start. */
-    fun feed(data: ByteArray, offset: Int, length: Int, ptsUs: Long, keyframe: Boolean): Boolean {
+    fun feed(data: ByteArray, offset: Int, length: Int, ptsUs: Long, keyframe: Boolean,
+             receivedNs: Long = System.nanoTime()): Boolean {
         var c = codec
         if (c == null) {
             if (!keyframe || width == 0) return false
@@ -43,7 +46,7 @@ class VideoDecoder(
             buf.clear()
             buf.put(data, offset, length)
             if (queuedAt.size > 300) queuedAt.clear()
-            queuedAt[ptsUs] = System.nanoTime()
+            queuedAt[ptsUs] = Pair(receivedNs, System.nanoTime())
             c.queueInputBuffer(index, 0, length, ptsUs, 0)
             true
         } catch (e: Exception) {
@@ -65,18 +68,10 @@ class VideoDecoder(
             setInteger("vendor.qti-ext-dec-picture-order.enable", 1)
             setInteger("vendor.low-latency.enable", 1)
         }
-        val c = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+        val c = createConfigured(format) ?: return null
         val lowLatency = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             c.codecInfo.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)
                 .isFeatureSupported(MediaCodecInfo.CodecCapabilities.FEATURE_LowLatency)
-        try {
-            c.configure(format, surface, null, 0)
-        } catch (e: Exception) {
-            Log.w(TAG, "low-latency configure rejected, retrying plain", e)
-            format.setInteger(MediaFormat.KEY_PRIORITY, 1)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) format.setInteger(MediaFormat.KEY_LOW_LATENCY, 0)
-            c.configure(format, surface, null, 0)
-        }
         c.start()
         // SPS/PPS go in first as codec config.
         val index = c.dequeueInputBuffer(500_000)
@@ -95,6 +90,49 @@ class VideoDecoder(
         return c
     }
 
+    /**
+     * Prefers a vendor decoder variant built for low latency (e.g. Qualcomm's
+     * "c2.qti.avc.decoder.low_latency", which Android never picks by default),
+     * then the platform default.
+     */
+    private fun createConfigured(format: MediaFormat): MediaCodec? {
+        val names = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+            .filter { info ->
+                !info.isEncoder && info.name.contains("low_latency", ignoreCase = true) &&
+                    !info.name.contains("secure", ignoreCase = true) &&
+                    info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_AVC, ignoreCase = true) } &&
+                    info.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC).videoCapabilities
+                        ?.isSizeSupported(width, height) == true
+            }
+            .map { it.name }
+        for (name in names + listOf<String?>(null)) {
+            val c = try {
+                if (name != null) MediaCodec.createByCodecName(name)
+                else MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            } catch (e: Exception) {
+                continue
+            }
+            try {
+                c.configure(format, surface, null, 0)
+                return c
+            } catch (e: Exception) {
+                Log.w(TAG, "${c.name} rejected the low-latency format", e)
+            }
+            // Last resort for this codec: drop the latency hints.
+            try {
+                c.reset()
+                format.setInteger(MediaFormat.KEY_PRIORITY, 1)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) format.setInteger(MediaFormat.KEY_LOW_LATENCY, 0)
+                c.configure(format, surface, null, 0)
+                return c
+            } catch (e: Exception) {
+                Log.w(TAG, "${c.name} failed to configure", e)
+                c.release()
+            }
+        }
+        return null
+    }
+
     private fun renderLoop(c: MediaCodec) {
         val info = MediaCodec.BufferInfo()
         while (running) {
@@ -107,7 +145,11 @@ class VideoDecoder(
                 val queued = queuedAt.remove(info.presentationTimeUs)
                 // Render immediately.
                 try { c.releaseOutputBuffer(index, true) } catch (e: Exception) { break }
-                if (queued != null) onDecoded(info.presentationTimeUs, ((System.nanoTime() - queued) / 1000).toInt())
+                if (queued != null) {
+                    val (received, enqueued) = queued
+                    onDecoded(info.presentationTimeUs, ((System.nanoTime() - enqueued) / 1000).toInt(),
+                              ((enqueued - received) / 1000).toInt())
+                }
             }
         }
     }

@@ -16,6 +16,8 @@ object Protocol {
     const val REQUEST_KEYFRAME = 6
     const val FRAME_STATS = 7
     const val DECODER_INFO = 8
+    const val PING = 9
+    const val PONG = 10
 
     const val ACT_DOWN = 0
     const val ACT_MOVE = 1

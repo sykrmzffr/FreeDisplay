@@ -101,8 +101,8 @@ class StreamClient(
             onStarted = { info ->
                 send(Protocol.message(Protocol.DECODER_INFO) { write(info.toByteArray(Charsets.UTF_8)) })
             },
-            onDecoded = { pts, decodeUs ->
-                send(Protocol.message(Protocol.FRAME_STATS) { writeLong(pts); writeInt(decodeUs) })
+            onDecoded = { pts, decodeUs, waitUs ->
+                send(Protocol.message(Protocol.FRAME_STATS) { writeLong(pts); writeInt(decodeUs); writeInt(waitUs) })
             },
         )
         var buffer = ByteArray(1 shl 20)
@@ -114,7 +114,9 @@ class StreamClient(
                 if (length < 0 || length > 64 * 1024 * 1024) throw IllegalStateException("bad length $length")
                 if (buffer.size < length) buffer = ByteArray(length + (length shr 2))
                 input.readFully(buffer, 0, length)
+                val receivedNs = System.nanoTime()
                 when (type) {
+                    Protocol.PING -> send(Protocol.message(Protocol.PONG) { write(buffer, 0, length) })
                     Protocol.VIDEO_CONFIG -> {
                         val w = readInt(buffer, 0)
                         val h = readInt(buffer, 4)
@@ -124,7 +126,7 @@ class StreamClient(
                     Protocol.VIDEO_FRAME -> {
                         val pts = readLong(buffer, 0)
                         val key = (buffer[8].toInt() and 1) != 0
-                        if (!decoder.feed(buffer, 9, length - 9, pts, key)) {
+                        if (!decoder.feed(buffer, 9, length - 9, pts, key, receivedNs)) {
                             send(Protocol.message(Protocol.REQUEST_KEYFRAME))
                         } else if (!streaming) {
                             streaming = true

@@ -59,9 +59,20 @@ Sent when a frame comes out of the decoder; the host uses it for latency stats.
 |----------|------|
 | ptsUs    | u64 pts of the decoded frame |
 | decodeUs | u32 time from queueing the frame to decoded output, tablet clock |
+| waitUs   | u32 time from receiving the frame to queueing it (waiting for a decoder input buffer) |
 
 ### 8 DECODER_INFO
 UTF-8 text describing the decoder (name, size, low-latency support).
+
+### 10 PONG
+Echoes a PING payload unchanged, as soon as it is read.
+
+## Host -> tablet (continued)
+
+### 9 PING
+| Field  | Type |
+|--------|------|
+| hostUs | u64 host clock when sent; echoed back in PONG to measure the link round trip |
 
 ## Host -> tablet
 

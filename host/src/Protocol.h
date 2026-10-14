@@ -17,8 +17,10 @@ enum MsgType : uint8_t {
     kVideoFrame = 3,
     kInput = 4,
     kRequestKeyframe = 6,
-    kFrameStats = 7,  // tablet -> host: u64 ptsUs, u32 decodeUs
+    kFrameStats = 7,  // tablet -> host: u64 ptsUs, u32 decodeUs, u32 inputWaitUs
     kDecoderInfo = 8, // tablet -> host: UTF-8 description of the decoder
+    kPing = 9,        // host -> tablet: u64 hostUs
+    kPong = 10,       // tablet -> host: the ping payload echoed back
 };
 
 enum InputAction : uint8_t {

@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
@@ -11,8 +11,8 @@ android {
         applicationId = "com.freedisplay.client"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3 // keep in sync with kAppVersionCode in host/src/main.cpp
-        versionName = "0.3.0"
+        versionCode = 6 // keep in sync with kAppVersionCode in host/src/main.cpp
+        versionName = "0.6.0"
     }
 
     buildTypes {

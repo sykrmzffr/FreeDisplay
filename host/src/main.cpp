@@ -1,4 +1,4 @@
-﻿// FreeDisplay host: streams a Windows monitor to an Android tablet over USB (adb)
+// FreeDisplay host: streams a Windows monitor to an Android tablet over USB (adb)
 // and injects the tablet's touch and pen input back into Windows.
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -23,7 +23,7 @@ namespace {
 
 constexpr const wchar_t* kPackage = L"com.freedisplay.client";
 constexpr const wchar_t* kActivity = L"com.freedisplay.client/.MainActivity";
-constexpr int kAppVersionCode = 3; // keep in sync with android/app/build.gradle.kts
+constexpr int kAppVersionCode = 6; // keep in sync with android/app/build.gradle.kts
 
 struct Options {
     int display = -1;     // -1: auto (VDD monitor, else primary)
@@ -241,14 +241,15 @@ void RunSession(SOCKET sock, const Options& opt) {
     cfg.u32(h);
     if (!SendMsg(sock, proto::kVideoConfig, cfg.buf)) return;
 
-    // Per-frame timestamps (host clock, Âµs) for the latency breakdown.
+    // Per-frame timestamps (host clock, microseconds) for the latency breakdown.
     struct Timing {
         uint64_t captured = 0, encoded = 0, sent = 0;
     };
     std::mutex timingMu;
     std::map<uint64_t, Timing> timings; // keyed by pts
     struct Totals {
-        uint64_t n = 0, encode = 0, send = 0, transit = 0, decode = 0, total = 0, worst = 0;
+        uint64_t n = 0, encode = 0, send = 0, transit = 0, wait = 0, decode = 0, total = 0, worst = 0;
+        uint64_t pings = 0, rtt = 0;
     } totals;
 
     std::atomic<bool> alive{true};
@@ -267,19 +268,28 @@ void RunSession(SOCKET sock, const Options& opt) {
                 proto::Reader r(p.data(), p.size());
                 uint64_t pts = (uint64_t(r.u32()) << 32) | r.u32();
                 uint32_t decodeUs = r.u32();
+                uint32_t waitUs = r.u32();
                 std::lock_guard<std::mutex> lock(timingMu);
                 auto it = timings.find(pts);
                 if (it == timings.end() || !it->second.sent) continue;
                 const Timing& tm = it->second;
                 uint64_t afterSend = ackAt - tm.sent;
+                uint64_t onTablet = uint64_t(decodeUs) + waitUs;
                 totals.n++;
                 totals.encode += tm.encoded - tm.captured;
                 totals.send += tm.sent - tm.encoded;
                 totals.decode += decodeUs;
-                totals.transit += afterSend > decodeUs ? afterSend - decodeUs : 0;
+                totals.wait += waitUs;
+                totals.transit += afterSend > onTablet ? afterSend - onTablet : 0;
                 totals.total += ackAt - tm.captured;
                 totals.worst = std::max(totals.worst, ackAt - tm.captured);
                 timings.erase(timings.begin(), std::next(it));
+            } else if (t == proto::kPong) {
+                proto::Reader r(p.data(), p.size());
+                uint64_t sentAt = (uint64_t(r.u32()) << 32) | r.u32();
+                std::lock_guard<std::mutex> lock(timingMu);
+                totals.pings++;
+                totals.rtt += NowUs() - sentAt;
             } else if (t == proto::kDecoderInfo) {
                 Log("Tablet decoder: %.*s", int(p.size()), reinterpret_cast<const char*>(p.data()));
             }
@@ -316,8 +326,15 @@ void RunSession(SOCKET sock, const Options& opt) {
     // arrives early stays pending instead of being dropped.
     const uint64_t minIntervalUs = 1000000 / fps * 3 / 4;
     bool pending = false;
+    uint64_t lastPing = 0;
     while (alive && !g_quit && !sendFailed) {
         input.KeepAlive();
+        if (NowUs() - lastPing > 500000) { // measures the bare USB/adb round trip
+            lastPing = NowUs();
+            proto::Writer pw;
+            pw.u64(lastPing);
+            if (!SendMsg(sock, proto::kPing, pw.buf)) break;
+        }
         if (!enc->Pump(onOutput)) break;
         if (!enc->WantsInput()) {
             Sleep(1);
@@ -350,11 +367,13 @@ void RunSession(SOCKET sock, const Options& opt) {
         if (now - statsAt > 5000000) {
             std::lock_guard<std::mutex> lock(timingMu);
             double n = double(std::max<uint64_t>(totals.n, 1));
-            Log("%.1f fps, %.1f Mbps | latency avg %.1f ms (encode %.1f, send %.1f, usb+return %.1f, "
-                "decode %.1f) worst %.1f ms",
+            Log("%.1f fps, %.1f Mbps | latency avg %.1f ms (encode %.1f, send %.1f, usb+return %.1f "
+                "[ping rtt %.1f], decoder input wait %.1f, decode %.1f) worst %.1f ms",
                 frames * 1e6 / double(now - statsAt), bytes * 8.0 / double(now - statsAt),
                 totals.total / n / 1000, totals.encode / n / 1000, totals.send / n / 1000,
-                totals.transit / n / 1000, totals.decode / n / 1000, totals.worst / 1000.0);
+                totals.transit / n / 1000,
+                totals.rtt / double(std::max<uint64_t>(totals.pings, 1)) / 1000,
+                totals.wait / n / 1000, totals.decode / n / 1000, totals.worst / 1000.0);
             totals = Totals{};
             frames = bytes = 0;
             statsAt = now;

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A tablet showing an extended desktop window; matches the Windows icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- tablet frame -->
+    <path android:fillColor="#24262E"
+        android:pathData="M29,35h50a5,5 0,0 1,5 5v28a5,5 0,0 1,-5 5h-50a5,5 0,0 1,-5 -5v-28a5,5 0,0 1,5 -5z" />
+    <!-- screen -->
+    <path android:fillColor="#48AAFF"
+        android:pathData="M30.5,38.5h47a2,2 0,0 1,2 2v27a2,2 0,0 1,-2 2h-47a2,2 0,0 1,-2 -2v-27a2,2 0,0 1,2 -2z" />
+    <!-- window -->
+    <path android:fillColor="#E6FFFFFF"
+        android:pathData="M42,45h24a1.5,1.5 0,0 1,1.5 1.5v15a1.5,1.5 0,0 1,-1.5 1.5h-24a1.5,1.5 0,0 1,-1.5 -1.5v-15a1.5,1.5 0,0 1,1.5 -1.5z" />
+    <path android:fillColor="#FFC440"
+        android:pathData="M42,45h24a1.5,1.5 0,0 1,1.5 1.5v2.5h-27v-2.5a1.5,1.5 0,0 1,1.5 -1.5z" />
+    <!-- usb plug -->
+    <path android:fillColor="#24262E" android:pathData="M50.5,73h7v6h-7z" />
+</vector>

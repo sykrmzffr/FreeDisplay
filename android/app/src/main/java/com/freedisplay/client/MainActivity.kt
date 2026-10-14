@@ -42,9 +42,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamClient.Listener {
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         surfaceView = SurfaceView(this)
         status = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            textSize = 20f
+            setTextColor(Color.rgb(220, 224, 232))
+            textSize = 18f
             gravity = Gravity.CENTER
+            setLineSpacing(0f, 1.2f)
+            setBackgroundColor(Color.BLACK) // covers the last frame after a disconnect
         }
         root.addView(surfaceView, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
         root.addView(status, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))

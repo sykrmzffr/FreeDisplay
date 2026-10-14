@@ -16,43 +16,68 @@ Virtual Display Driver monitor
 The host detects the tablet, installs/updates the app over adb, launches it
 and starts streaming. Wire format: [PROTOCOL.md](PROTOCOL.md).
 
-## Requirements
+## Install (Windows)
 
-- Windows 10/11 with [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver)
-  installed and enabled. Set its `vdd_settings.xml` GPU to the one whose
-  encoder you want to use, and add your tablet's resolution.
-- Android 8+ tablet with **USB debugging** enabled (one-time setup).
-- To build: Visual Studio 2022 C++ build tools, Android SDK, JDK 17+.
+1. Install [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver)
+   (this provides the extra monitor). In its `vdd_settings.xml`, pick the GPU
+   whose video encoder you want to use and add your tablet's resolution.
+2. Run `FreeDisplay.exe` (from `dist\` after building) and choose **Yes**.
+   It installs for your user only (no admin rights) into
+   `%LOCALAPPDATA%\Programs\FreeDisplay`. It also adds a Start menu shortcut and
+   an Apps & Features entry, and it starts with Windows. Choose **No** to run it once without installing.
+3. FreeDisplay now runs in the notification area (tray).
 
-## Build
+Silent options: `FreeDisplay.exe --install --quiet`, `FreeDisplay.exe --uninstall --quiet`.
+Uninstall normally from **Settings > Apps > Installed apps > FreeDisplay**.
 
-```bat
-host\build.bat
-```
+## Set up the tablet (once)
 
-```bat
-cd android
-gradle assembleRelease
-copy app\build\outputs\apk\release\app-release.apk ..\host\out\FreeDisplay.apk
-```
+1. **Settings > About tablet**: tap **OS version** (Xiaomi) or **Build number**
+   (most others) 7 times to unlock Developer options.
+2. **Developer options**: turn on **USB debugging**. On Xiaomi, also turn on
+   **USB debugging (Security settings)** and **Install via USB** so input and
+   automatic app updates work.
+3. Plug the tablet into the PC and tap **Allow** on the USB debugging prompt
+   (tick "Always allow from this computer").
 
-`FreeDisplay.apk` must sit next to `FreeDisplayHost.exe`; the host installs it.
+FreeDisplay then installs its tablet app by itself and opens it. After that,
+plugging in the cable is all it takes. To install the tablet app by hand,
+copy `dist\tablet\FreeDisplay.apk` to the tablet and open it.
 
 ## Use
 
-Run `host\out\FreeDisplayHost.exe` and plug in the tablet. The host lives in the
-notification area; its menu has:
+The tray icon's menu has:
 
 - **Touch input / Pen input**: turn tablet input on or off (applies instantly).
 - **Video quality**: Sharp (full resolution), Balanced (75%, default),
   Fastest (50%). Lower = less latency, softer text.
 - **Start with Windows**, **Open log**, **Quit**.
 
+Arrange the extra monitor in **Windows Settings > System > Display** like any monitor.
+
 Settings: `%APPDATA%\FreeDisplay\settings.ini`. Log: `%APPDATA%\FreeDisplay\host.log`.
 
 Command-line options for testing: `--console`, `--list`, `--display N`,
 `--fps N`, `--bitrate Mbps`, `--scale PERCENT`, `--encoder auto|amf|nvenc|mf`,
 `--no-install`.
+
+## Build
+
+Needs Visual Studio 2022 C++ build tools, the Android SDK and Android Studio
+(or JDK 17+ and Gradle).
+
+```powershell
+.\build-all.ps1
+```
+
+This builds the tablet app and then `host\out\FreeDisplay.exe`, which has the
+tablet app and adb (from SDK platform-tools) embedded. The result is copied to
+`dist\FreeDisplay.exe`; `dist\tablet\FreeDisplay.apk` is for manual installs.
+`host\out\FreeDisplay.exe` runs in place without offering to install, because
+`FreeDisplay.apk` sits next to it.
+
+The tablet app is signed with this PC's Android debug key. If you build on
+another PC, uninstall the tablet app once so the new build can be installed.
 
 ## Encoder selection
 

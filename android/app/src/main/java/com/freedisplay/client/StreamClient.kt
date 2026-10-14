@@ -52,7 +52,12 @@ class StreamClient(
 
     private fun loop() {
         while (running) {
-            listener.onStatus("Waiting for PC…\nStart FreeDisplay on Windows and plug in USB.")
+            listener.onStatus(
+                "FreeDisplay\n\nWaiting for your PC…\n\n" +
+                    "1.  Run FreeDisplay on Windows (look for its tray icon)\n" +
+                    "2.  Connect this tablet with a USB cable\n" +
+                    "3.  Allow USB debugging if the tablet asks"
+            )
             try {
                 Socket().use { s ->
                     s.tcpNoDelay = true

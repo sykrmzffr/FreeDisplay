@@ -12,7 +12,7 @@ public static class W {
 }
 "@
 
-$exe = Join-Path $PSScriptRoot "..\out\FreeDisplayHost.exe"
+$exe = Join-Path $PSScriptRoot "..\out\FreeDisplay.exe"
 $log = Join-Path $env:APPDATA "FreeDisplay\host.log"
 $adb = Join-Path $env:LOCALAPPDATA "Android\Sdk\platform-tools\adb.exe"
 
@@ -36,7 +36,7 @@ function Menu($keys) {
 }
 function Swipe { & $adb shell input swipe 900 700 1500 1000 250; Start-Sleep -Milliseconds 400 }
 
-Get-Process FreeDisplayHost -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process FreeDisplay,FreeDisplayHost -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Milliseconds 500
 Start-Process $exe
 "1. started:             " + (Wait-Log "Encoder:")
@@ -65,6 +65,6 @@ $n = LineCount
 Menu @("q")
 "5. quit:                " + (Wait-Log "FreeDisplay host stopped" $n 15)
 Start-Sleep -Milliseconds 500
-"   process still running: " + [bool](Get-Process FreeDisplayHost -ErrorAction SilentlyContinue)
+"   process still running: " + [bool](Get-Process FreeDisplay,FreeDisplayHost -ErrorAction SilentlyContinue)
 "--- input counters per session:"
 Get-Content $log | Select-String "Input this session" | ForEach-Object { "   " + $_.Line }

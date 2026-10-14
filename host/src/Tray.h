@@ -24,7 +24,6 @@ private:
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
     void ShowMenu();
     void ApplyStatus();
-    HICON MakeIcon();
 
     HWND hwnd_ = nullptr;
     HICON icon_ = nullptr;

@@ -11,8 +11,8 @@ android {
         applicationId = "com.freedisplay.client"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6 // keep in sync with kAppVersionCode in host/src/main.cpp
-        versionName = "0.6.0"
+        versionCode = 8 // keep in sync with kAppVersionCode in host/src/main.cpp
+        versionName = "1.0.0"
     }
 
     buildTypes {

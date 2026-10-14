@@ -17,6 +17,7 @@
 #include "Encoder.h"
 #include "NvencEncoder.h"
 #include "Input.h"
+#include "Installer.h"
 #include "Protocol.h"
 #include "Settings.h"
 #include "Tray.h"
@@ -29,7 +30,7 @@ namespace {
 
 constexpr const wchar_t* kPackage = L"com.freedisplay.client";
 constexpr const wchar_t* kActivity = L"com.freedisplay.client/.MainActivity";
-constexpr int kAppVersionCode = 6; // keep in sync with android/app/build.gradle.kts
+constexpr int kAppVersionCode = 8; // keep in sync with android/app/build.gradle.kts
 
 struct Options {
     int display = -1;     // -1: auto (VDD monitor, else primary)
@@ -163,9 +164,9 @@ bool PrepareDevice(const Adb& adb, const std::string& serial, const Options& opt
     if (opt.install) {
         int installed = InstalledVersionCode(adb, serial);
         if (installed != kAppVersionCode) {
-            std::wstring apk = ExeDir() + L"FreeDisplay.apk";
+            std::wstring apk = installer::PayloadDir() + L"FreeDisplay.apk";
             if (GetFileAttributesW(apk.c_str()) == INVALID_FILE_ATTRIBUTES) {
-                Log("FreeDisplay.apk not found next to the host; install the app manually");
+                Log("FreeDisplay.apk not found; install the tablet app manually");
             } else {
                 Log("Installing tablet app (installed version %d, need %d)...", installed, kAppVersionCode);
                 std::string out;
@@ -530,6 +531,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     Options opt;
     bool console = false;
+    enum class Setup { None, Install, Uninstall } setup = Setup::None;
+    bool quiet = false;
     for (int i = 1; i < argc; i++) {
         std::wstring a = argv[i];
         auto next = [&] { return i + 1 < argc ? _wtoi(argv[++i]) : 0; };
@@ -553,16 +556,41 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
             opt.encoder = i + 1 < argc ? argv[++i] : L"auto";
         } else if (a == L"--no-install") {
             opt.install = false;
+        } else if (a == L"--install") {
+            setup = Setup::Install;
+        } else if (a == L"--uninstall") {
+            setup = Setup::Uninstall;
+        } else if (a == L"--quiet") {
+            quiet = true;
         } else {
             if (!stdoutRedirected) AttachParentConsole();
-            printf("Usage: FreeDisplayHost [--console] [--list] [--display N] [--fps N] [--bitrate Mbps]\n"
-                   "                       [--scale PERCENT] [--speed 0-100] [--encoder auto|amf|nvenc|mf]\n"
-                   "                       [--no-install]\n"
+            printf("Usage: FreeDisplay [--console] [--list] [--display N] [--fps N] [--bitrate Mbps]\n"
+                   "                   [--scale PERCENT] [--speed 0-100] [--encoder auto|amf|nvenc|mf]\n"
+                   "                   [--no-install]\n"
+                   "       FreeDisplay --install|--uninstall [--quiet]\n"
                    "Runs in the notification area; --console also shows the log in a console window.\n");
             return 1;
         }
     }
     LocalFree(argv);
+
+    if (setup == Setup::Install) return installer::Install(quiet, !quiet) ? 0 : 1;
+    if (setup == Setup::Uninstall) return installer::Uninstall(quiet) ? 0 : 1;
+    if (!installer::RunningInPlace() && !console && !stdoutRedirected) {
+        // Started from a download: offer to install, or just run from a cache.
+        int choice = MessageBoxW(nullptr,
+                                 L"Install FreeDisplay on this PC?\n\n"
+                                 L"Yes:  install for your user (Start menu shortcut, starts with Windows)\n"
+                                 L"No:  just run it this time\n\n"
+                                 L"No administrator rights are needed.",
+                                 L"FreeDisplay", MB_YESNOCANCEL | MB_ICONQUESTION | MB_SETFOREGROUND);
+        if (choice == IDYES) return installer::Install(false, true) ? 0 : 1;
+        if (choice != IDNO) return 0;
+    }
+    if (!installer::RunningInPlace() && !installer::PreparePortable()) {
+        MessageBoxW(nullptr, L"FreeDisplay could not unpack its files.", L"FreeDisplay", MB_ICONERROR);
+        return 1;
+    }
 
     if (console && !stdoutRedirected) {
         AllocConsole();

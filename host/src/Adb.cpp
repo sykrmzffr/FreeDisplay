@@ -1,10 +1,11 @@
 #include <windows.h>
 #include "Adb.h"
+#include "Installer.h"
 #include "Util.h"
 #include <sstream>
 
 bool Adb::Locate() {
-    std::vector<std::wstring> candidates = {ExeDir() + L"adb\\adb.exe", ExeDir() + L"adb.exe"};
+    std::vector<std::wstring> candidates = {installer::PayloadDir() + L"adb\\adb.exe", ExeDir() + L"adb.exe"};
     wchar_t buf[MAX_PATH];
     for (const wchar_t* var : {L"ANDROID_HOME", L"ANDROID_SDK_ROOT"}) {
         if (GetEnvironmentVariableW(var, buf, MAX_PATH))

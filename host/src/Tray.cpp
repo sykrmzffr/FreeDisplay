@@ -1,5 +1,8 @@
 #include "Tray.h"
 #include <shellapi.h>
+#include <commctrl.h>
+#include "Installer.h"
+#include "Resources.h"
 #include "Settings.h"
 #include "Util.h"
 
@@ -33,7 +36,7 @@ bool Tray::Create(HINSTANCE inst, Callbacks cb) {
     if (!hwnd_) return false;
     SetWindowLongPtrW(hwnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 
-    icon_ = MakeIcon();
+    LoadIconMetric(inst, MAKEINTRESOURCEW(IDI_APP), LIM_SMALL, &icon_);
     NOTIFYICONDATAW nid{sizeof nid};
     nid.hWnd = hwnd_;
     nid.uID = kIconId;
@@ -158,6 +161,11 @@ LRESULT CALLBACK Tray::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             self->ApplyStatus();
             return 0;
         }
+        if (msg == installer::kQuitMsg) { // an installer or uninstaller wants us gone
+            if (self->cb_.onQuit) self->cb_.onQuit();
+            PostQuitMessage(0);
+            return 0;
+        }
         if (msg == taskbarCreated) { // Explorer restarted: put the icon back
             NOTIFYICONDATAW nid{sizeof nid};
             nid.hWnd = hwnd;
@@ -183,35 +191,4 @@ int Tray::Run() {
         DispatchMessageW(&msg);
     }
     return 0;
-}
-
-// Draws a small tablet-with-screen glyph so no .ico resource is needed.
-HICON Tray::MakeIcon() {
-    const int n = GetSystemMetrics(SM_CXSMICON) * 2;
-    HDC screen = GetDC(nullptr);
-    HDC dc = CreateCompatibleDC(screen);
-    HBITMAP color = CreateCompatibleBitmap(screen, n, n);
-    HBITMAP mask = CreateBitmap(n, n, 1, 1, nullptr);
-    ReleaseDC(nullptr, screen);
-
-    HGDIOBJ old = SelectObject(dc, mask);
-    PatBlt(dc, 0, 0, n, n, WHITENESS); // transparent everywhere...
-    RECT body{n / 16, n / 6, n - n / 16, n - n / 6};
-    FillRect(dc, &body, static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH))); // ...except the tablet
-    SelectObject(dc, color);
-    HBRUSH frame = CreateSolidBrush(RGB(40, 40, 48));
-    HBRUSH glass = CreateSolidBrush(RGB(64, 156, 255));
-    FillRect(dc, &body, frame);
-    RECT screenRect{body.left + n / 10, body.top + n / 10, body.right - n / 10, body.bottom - n / 10};
-    FillRect(dc, &screenRect, glass);
-    SelectObject(dc, old);
-    DeleteObject(frame);
-    DeleteObject(glass);
-    DeleteDC(dc);
-
-    ICONINFO ii{TRUE, 0, 0, mask, color};
-    HICON icon = CreateIconIndirect(&ii);
-    DeleteObject(color);
-    DeleteObject(mask);
-    return icon;
 }

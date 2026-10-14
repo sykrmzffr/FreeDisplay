@@ -41,4 +41,6 @@ private:
     ULONGLONG lastTouchInject_ = 0;
     bool penDown_ = false;
     bool barrelDown_ = false;
+    // Per-session counts, logged at Shutdown.
+    unsigned touchEvents_ = 0, touchIgnored_ = 0, penEvents_ = 0, penIgnored_ = 0;
 };

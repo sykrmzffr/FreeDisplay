@@ -4,7 +4,13 @@
 #include <cstdio>
 #include <string>
 
-// Timestamped log line to stdout.
+#include <mutex>
+
+// Optional log file; Log() writes to it as well as stdout.
+inline FILE* g_logFile = nullptr;
+inline std::mutex g_logMu;
+
+// Timestamped log line to stdout and the log file.
 inline void Log(const char* fmt, ...) {
     SYSTEMTIME t;
     GetLocalTime(&t);
@@ -13,8 +19,14 @@ inline void Log(const char* fmt, ...) {
     va_start(ap, fmt);
     vsnprintf(msg, sizeof msg, fmt, ap);
     va_end(ap);
+    std::lock_guard<std::mutex> lock(g_logMu);
     printf("[%02d:%02d:%02d.%03d] %s\n", t.wHour, t.wMinute, t.wSecond, t.wMilliseconds, msg);
     fflush(stdout);
+    if (g_logFile) {
+        fprintf(g_logFile, "[%04d-%02d-%02d %02d:%02d:%02d.%03d] %s\n", t.wYear, t.wMonth, t.wDay, t.wHour,
+                t.wMinute, t.wSecond, t.wMilliseconds, msg);
+        fflush(g_logFile);
+    }
 }
 
 // Logs and returns false when an HRESULT failed.

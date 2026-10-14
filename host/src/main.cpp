@@ -18,7 +18,11 @@
 #include "NvencEncoder.h"
 #include "Input.h"
 #include "Protocol.h"
+#include "Settings.h"
+#include "Tray.h"
 #include "Util.h"
+#include <shellapi.h>
+#include <share.h>
 
 namespace {
 
@@ -30,7 +34,7 @@ struct Options {
     int display = -1;     // -1: auto (VDD monitor, else primary)
     UINT fps = 120;       // upper bound; the tablet's refresh rate also caps it
     UINT bitrateMbps = 0; // 0: automatic
-    int scalePct = 75;    // encode size as % of the monitor size (lower = less latency)
+    int scalePct = -1;    // encode size as % of the monitor; -1: the tray's Quality setting
     int speed = -1;       // encoder quality/speed 0 (fastest) .. 100 (best); -1: default
     std::wstring encoder = L"auto"; // auto | amf | nvenc | mf
     bool install = true;
@@ -58,9 +62,17 @@ std::unique_ptr<VideoEncoder> OpenEncoder(const Options& opt, Capture& cap, UINT
 }
 
 std::atomic<bool> g_quit{false};
+std::atomic<bool> g_restart{false}; // end the current session so it restarts with new settings
+DWORD g_uiThread = 0;
+Tray* g_tray = nullptr;
+
+void Status(const std::wstring& text, bool notify = false) {
+    if (g_tray) g_tray->SetStatus(text, notify);
+}
 
 BOOL WINAPI OnCtrl(DWORD) {
     g_quit = true;
+    PostThreadMessageW(g_uiThread, WM_QUIT, 0, 0);
     return TRUE;
 }
 
@@ -222,8 +234,9 @@ void RunSession(SOCKET sock, const Options& opt) {
     UINT fps = std::min<UINT>(opt.fps, tabHz ? tabHz : 60);
     if (output.monitorName.find(L"VDD") != std::wstring::npos) SetRefreshRate(output.gdiName, fps);
 
-    UINT w = UINT((output.desktop.right - output.desktop.left) * opt.scalePct / 100) & ~1u;
-    UINT h = UINT((output.desktop.bottom - output.desktop.top) * opt.scalePct / 100) & ~1u;
+    int scalePct = opt.scalePct > 0 ? opt.scalePct : AppSettings().qualityPct.load();
+    UINT w = UINT((output.desktop.right - output.desktop.left) * scalePct / 100) & ~1u;
+    UINT h = UINT((output.desktop.bottom - output.desktop.top) * scalePct / 100) & ~1u;
     UINT bitrate = opt.bitrateMbps ? opt.bitrateMbps * 1000000 : AutoBitrate(w, h, std::min(fps, 60u));
 
     Capture cap;
@@ -244,6 +257,10 @@ void RunSession(SOCKET sock, const Options& opt) {
     cfg.u32(w);
     cfg.u32(h);
     if (!SendMsg(sock, proto::kVideoConfig, cfg.buf)) return;
+    Status(L"Streaming to " + Widen(name) + L" (" + std::to_wstring(w) + L"x" + std::to_wstring(h) + L" @ " +
+               std::to_wstring(fps) + L" Hz)",
+           true);
+    g_restart = false;
 
     // Per-frame timestamps (host clock, microseconds) for the latency breakdown.
     struct Timing {
@@ -331,7 +348,7 @@ void RunSession(SOCKET sock, const Options& opt) {
     const uint64_t minIntervalUs = 1000000 / fps * 3 / 4;
     bool pending = false;
     uint64_t lastPing = 0;
-    while (alive && !g_quit && !sendFailed) {
+    while (alive && !g_quit && !g_restart && !sendFailed) {
         input.KeepAlive();
         if (NowUs() - lastPing > 500000) { // measures the bare USB/adb round trip
             lastPing = NowUs();
@@ -402,19 +419,94 @@ void PrintOutputs() {
                o.primary ? "  [primary]" : "");
 }
 
+// Detects the tablet, prepares it and runs streaming sessions until g_quit.
+void HostLoop(Options opt) {
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    Log("FreeDisplay host starting. Displays:");
+    PrintOutputs();
+
+    Adb adb;
+    if (!adb.Locate()) {
+        Log("adb.exe not found (put it in .\\adb\\ or install Android platform-tools)");
+        Status(L"Error: adb.exe not found", true);
+        return;
+    }
+    Log("Using %s", Narrow(adb.Path()).c_str());
+    adb.Run(L"start-server");
+
+    SOCKET listener = Listen(proto::kPort);
+    if (listener == INVALID_SOCKET) {
+        Log("Cannot listen on 127.0.0.1:%u (another host running?)", proto::kPort);
+        Status(L"Error: port " + std::to_wstring(proto::kPort) + L" is in use", true);
+        return;
+    }
+
+    std::string current;
+    bool waitingLogged = false;
+    while (!g_quit) {
+        std::string serial = adb.FirstReadyDevice();
+        if (serial.empty()) {
+            if (!waitingLogged) {
+                Log("Waiting for a tablet (USB cable, USB debugging enabled)...");
+                Status(L"Waiting for tablet (plug in USB)");
+            }
+            waitingLogged = true;
+            current.clear();
+            Sleep(1000);
+            continue;
+        }
+        waitingLogged = false;
+        if (serial != current) {
+            Log("Tablet connected: %s", serial.c_str());
+            Status(L"Tablet connected, starting app...");
+            if (!PrepareDevice(adb, serial, opt)) {
+                Status(L"Could not start the tablet app (see log)");
+                Sleep(2000);
+                continue;
+            }
+            current = serial;
+        }
+        SOCKET c = AcceptWithTimeout(listener, 1000);
+        if (c == INVALID_SOCKET) continue;
+        Log("Tablet app connected");
+        RunSession(c, opt);
+        closesocket(c);
+        if (!g_quit) Status(L"Tablet connected, waiting for the app");
+    }
+    closesocket(listener);
+    CoUninitialize();
+}
+
+// Sends stdout to the console of the terminal that started us, if any.
+void AttachParentConsole() {
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+        FILE* f;
+        freopen_s(&f, "CONOUT$", "w", stdout);
+    }
+}
+
 } // namespace
 
-int wmain(int argc, wchar_t** argv) {
+int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-    SetConsoleCtrlHandler(OnCtrl, TRUE);
+    g_uiThread = GetCurrentThreadId();
+    // When stdout is a file or pipe (scripts, benchmarks) the CRT already uses it.
+    bool stdoutRedirected = GetFileType(GetStdHandle(STD_OUTPUT_HANDLE)) != FILE_TYPE_UNKNOWN &&
+                            GetStdHandle(STD_OUTPUT_HANDLE) != nullptr;
 
+    int argc = 0;
+    wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     Options opt;
+    bool console = false;
     for (int i = 1; i < argc; i++) {
         std::wstring a = argv[i];
         auto next = [&] { return i + 1 < argc ? _wtoi(argv[++i]) : 0; };
         if (a == L"--list") {
+            if (!stdoutRedirected) AttachParentConsole();
             PrintOutputs();
             return 0;
+        } else if (a == L"--console") {
+            console = true;
         } else if (a == L"--display") {
             opt.display = next();
         } else if (a == L"--fps") {
@@ -430,66 +522,65 @@ int wmain(int argc, wchar_t** argv) {
         } else if (a == L"--no-install") {
             opt.install = false;
         } else {
-            printf("Usage: FreeDisplayHost [--list] [--display N] [--fps N] [--bitrate Mbps]\n"
-                   "                       [--scale PERCENT] [--speed 0-100] [--encoder auto|amf|nvenc|mf]\n                       [--no-install]\n");
+            if (!stdoutRedirected) AttachParentConsole();
+            printf("Usage: FreeDisplayHost [--console] [--list] [--display N] [--fps N] [--bitrate Mbps]\n"
+                   "                       [--scale PERCENT] [--speed 0-100] [--encoder auto|amf|nvenc|mf]\n"
+                   "                       [--no-install]\n"
+                   "Runs in the notification area; --console also shows the log in a console window.\n");
             return 1;
         }
     }
+    LocalFree(argv);
 
-    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (console && !stdoutRedirected) {
+        AllocConsole();
+        FILE* f;
+        freopen_s(&f, "CONOUT$", "w", stdout);
+        SetConsoleCtrlHandler(OnCtrl, TRUE);
+    }
+
+    HANDLE single = CreateMutexW(nullptr, TRUE, L"Local\\FreeDisplayHost");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        if (!stdoutRedirected && !console)
+            MessageBoxW(nullptr, L"FreeDisplay is already running. Look for its icon in the notification area.",
+                        L"FreeDisplay", MB_ICONINFORMATION);
+        return 0;
+    }
+
+    // Keep the previous run's log next to the current one.
+    std::wstring logPath = Settings::DataDir() + L"host.log";
+    MoveFileExW(logPath.c_str(), (Settings::DataDir() + L"host.previous.log").c_str(), MOVEFILE_REPLACE_EXISTING);
+    g_logFile = _wfsopen(logPath.c_str(), L"w", _SH_DENYWR);
+    AppSettings().Load();
+
     MFStartup(MF_VERSION, MFSTARTUP_LITE);
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
     timeBeginPeriod(1);
 
-    Log("FreeDisplay host starting. Displays:");
-    PrintOutputs();
+    Tray tray;
+    Tray::Callbacks cb;
+    cb.onQualityChanged = [] { g_restart = true; };
+    cb.onQuit = [] { g_quit = true; };
+    if (tray.Create(inst, cb)) g_tray = &tray;
+    else Log("Notification-area icon unavailable");
 
-    Adb adb;
-    if (!adb.Locate()) {
-        Log("adb.exe not found (put it in .\\adb\\ or install Android platform-tools)");
-        return 1;
+    std::thread worker(HostLoop, opt);
+    if (g_tray) {
+        tray.Run();
+    } else {
+        while (!g_quit) Sleep(200);
     }
-    Log("Using %s", Narrow(adb.Path()).c_str());
-    adb.Run(L"start-server");
+    g_quit = true;
+    worker.join();
+    g_tray = nullptr;
+    tray.Destroy();
 
-    SOCKET listener = Listen(proto::kPort);
-    if (listener == INVALID_SOCKET) {
-        Log("Cannot listen on 127.0.0.1:%u (another host running?)", proto::kPort);
-        return 1;
-    }
-
-    std::string current;
-    bool waitingLogged = false;
-    while (!g_quit) {
-        std::string serial = adb.FirstReadyDevice();
-        if (serial.empty()) {
-            if (!waitingLogged) Log("Waiting for a tablet (USB cable, USB debugging enabled)...");
-            waitingLogged = true;
-            current.clear();
-            Sleep(1000);
-            continue;
-        }
-        waitingLogged = false;
-        if (serial != current) {
-            Log("Tablet connected: %s", serial.c_str());
-            if (!PrepareDevice(adb, serial, opt)) {
-                Sleep(2000);
-                continue;
-            }
-            current = serial;
-        }
-        SOCKET c = AcceptWithTimeout(listener, 1000);
-        if (c == INVALID_SOCKET) continue;
-        Log("Tablet app connected");
-        RunSession(c, opt);
-        closesocket(c);
-    }
-
-    closesocket(listener);
     timeEndPeriod(1);
     WSACleanup();
     MFShutdown();
-    CoUninitialize();
+    Log("FreeDisplay host stopped");
+    if (g_logFile) fclose(g_logFile);
+    if (single) CloseHandle(single);
     return 0;
 }

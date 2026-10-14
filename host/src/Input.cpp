@@ -1,4 +1,5 @@
 #include "Input.h"
+#include "Settings.h"
 #include "Util.h"
 #include <algorithm>
 #include <vector>
@@ -16,10 +17,16 @@ bool Input::Init() {
 
 void Input::Shutdown() {
     std::lock_guard<std::mutex> lock(mu_);
+    Log("Input this session: touch %u injected / %u ignored, pen %u injected / %u ignored", touchEvents_,
+        touchIgnored_, penEvents_, penIgnored_);
+    touchEvents_ = touchIgnored_ = penEvents_ = penIgnored_ = 0;
     if (!contacts_.empty()) InjectContacts(kMaxContacts, POINTER_FLAG_UP);
     contacts_.clear();
-    if (penDown_ || barrelDown_) SendMouse(POINT{}, (penDown_ ? MOUSEEVENTF_LEFTUP : 0) |
-                                                    (barrelDown_ ? MOUSEEVENTF_RIGHTUP : 0));
+    if (penDown_ || barrelDown_) {
+        POINT cur{};
+        GetCursorPos(&cur);
+        SendMouse(cur, (penDown_ ? MOUSEEVENTF_LEFTUP : 0) | (barrelDown_ ? MOUSEEVENTF_RIGHTUP : 0));
+    }
     penDown_ = barrelDown_ = false;
 }
 
@@ -41,10 +48,31 @@ void Input::Handle(const proto::InputEvent& ev) {
     if (ev.pointers.empty()) return;
     std::lock_guard<std::mutex> lock(mu_);
     uint8_t tool = ev.pointers[std::min<size_t>(ev.actionIndex, ev.pointers.size() - 1)].tool;
-    if (tool == proto::kFinger)
-        HandleTouch(ev);
-    else
-        HandlePen(ev);
+    if (tool == proto::kFinger) {
+        if (AppSettings().touch) {
+            touchEvents_++;
+            HandleTouch(ev);
+            return;
+        }
+        touchIgnored_++;
+        if (!contacts_.empty()) { // switched off mid-gesture: lift every finger
+            InjectContacts(kMaxContacts, POINTER_FLAG_UP);
+            contacts_.clear();
+        }
+    } else {
+        if (AppSettings().pen) {
+            penEvents_++;
+            HandlePen(ev);
+            return;
+        }
+        penIgnored_++;
+        if (penDown_ || barrelDown_) { // switched off mid-stroke: release the button
+            POINT cur{};
+            GetCursorPos(&cur);
+            SendMouse(cur, (penDown_ ? MOUSEEVENTF_LEFTUP : 0) | (barrelDown_ ? MOUSEEVENTF_RIGHTUP : 0));
+            penDown_ = barrelDown_ = false;
+        }
+    }
 }
 
 UINT32 Input::FreeSlot() const {

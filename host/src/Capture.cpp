@@ -361,6 +361,42 @@ bool Capture::ConvertTo(ID3D11Texture2D* nv12) {
     return HR_OK(vctx_->VideoProcessorBlt(vp_.Get(), view, 0, 1, &stream));
 }
 
+bool Capture::Reacquire(const OutputInfo& out) {
+    dup_.Reset();
+    if (!device_) return false;
+    ComPtr<IDXGIAdapter1> adapter;
+    ComPtr<IDXGIOutput1> output;
+    if (!FindOutput(out.gdiName, adapter, output)) {
+        Log("Output %s is gone", Narrow(out.gdiName).c_str());
+        return false;
+    }
+    DXGI_ADAPTER_DESC1 ad;
+    adapter->GetDesc1(&ad);
+    if (ad.AdapterLuid.LowPart != luid_.LowPart || ad.AdapterLuid.HighPart != luid_.HighPart) {
+        Log("Output %s moved to another GPU", Narrow(out.gdiName).c_str());
+        return false;
+    }
+    ComPtr<IDXGIOutput5> output5;
+    DXGI_FORMAT formats[] = {DXGI_FORMAT_B8G8R8A8_UNORM};
+    HRESULT hr = E_NOINTERFACE;
+    if (SUCCEEDED(output.As(&output5)))
+        hr = output5->DuplicateOutput1(device_.Get(), 0, ARRAYSIZE(formats), formats, &dup_);
+    if (FAILED(hr)) hr = output->DuplicateOutput(device_.Get(), &dup_);
+    if (FAILED(hr)) {
+        Log("Duplicating %s again failed 0x%08lX", Narrow(out.gdiName).c_str(), static_cast<unsigned long>(hr));
+        dup_.Reset();
+        return false;
+    }
+    DXGI_OUTDUPL_DESC dd;
+    dup_->GetDesc(&dd);
+    if (dd.ModeDesc.Width != srcW_ || dd.ModeDesc.Height != srcH_) {
+        Log("Output %s is now %ux%u", Narrow(out.gdiName).c_str(), dd.ModeDesc.Width, dd.ModeDesc.Height);
+        dup_.Reset();
+        return false;
+    }
+    return true;
+}
+
 void Capture::Shutdown() {
     outViews_.clear();
     inView_.Reset();

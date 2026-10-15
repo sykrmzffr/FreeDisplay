@@ -12,6 +12,7 @@ public:
     struct Callbacks {
         std::function<void()> onQualityChanged; // the stream must restart at the new size
         std::function<void()> onQuit;
+        std::function<void()> onDisplayChanged; // monitors added/removed/moved (e.g. Win+P)
     };
 
     bool Create(HINSTANCE inst, Callbacks cb);

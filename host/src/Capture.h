@@ -28,6 +28,12 @@ public:
     bool Init(const OutputInfo& out, UINT encodeW, UINT encodeH);
     void Shutdown();
 
+    // After the duplication was lost (mode change, Win+P, secure desktop): duplicates
+    // the output again on the same D3D device, which the encoder keeps using. Returns
+    // false when that is not possible (output gone, other GPU, other size); the
+    // session must then restart.
+    bool Reacquire(const OutputInfo& out);
+
     ID3D11Device* Device() const { return device_.Get(); }
     LUID AdapterLuid() const { return luid_; }
     UINT AdapterVendor() const { return vendor_; } // PCI vendor id: 0x1002 AMD, 0x10DE NVIDIA, 0x8086 Intel

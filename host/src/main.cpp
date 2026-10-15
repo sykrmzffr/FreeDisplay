@@ -65,6 +65,7 @@ std::unique_ptr<VideoEncoder> OpenEncoder(const Options& opt, Capture& cap, UINT
 
 std::atomic<bool> g_quit{false};
 std::atomic<bool> g_restart{false}; // end the current session so it restarts with new settings
+std::atomic<uint64_t> g_displayChangedAt{0}; // last WM_DISPLAYCHANGE (NowUs), 0 when handled
 DWORD g_uiThread = 0;
 Tray* g_tray = nullptr;
 
@@ -217,13 +218,17 @@ void RunSession(SOCKET sock, const Options& opt) {
         Log("No display to capture");
         return;
     }
-    bool isVdd = output.monitorName.find(L"VDD") != std::wstring::npos;
+    // In Duplicate mode the VDD monitor shares an output with the main screen, which
+    // then reports the VDD name too; only the VDD's own output is the virtual monitor.
+    const std::wstring vddName = VirtualMonitor::Find();
+    bool isVdd = output.monitorName.find(L"VDD") != std::wstring::npos && output.gdiName == vddName;
     if (!isVdd && opt.display < 0) {
-        bool installed = !VirtualMonitor::Find().empty();
-        Log("Virtual Display Driver monitor %s; mirroring %s instead", installed ? "is disabled" : "not installed",
-            Narrow(output.gdiName).c_str());
-        Status(installed ? L"Mirroring the main screen: enable the Virtual Display Driver monitor to extend"
-                         : L"Mirroring the main screen: install Virtual Display Driver to extend",
+        bool duplicate = !vddName.empty() && output.monitorName.find(L"VDD") != std::wstring::npos;
+        Log("Mirroring %s (%s)", Narrow(output.gdiName).c_str(),
+            duplicate ? "Duplicate mode" : vddName.empty() ? "no Virtual Display Driver monitor" : "VDD monitor off");
+        Status(duplicate         ? L"Duplicate mode: mirroring the main screen. Press Win+P > Extend for a second screen"
+               : vddName.empty() ? L"Mirroring the main screen: install Virtual Display Driver to extend"
+                                 : L"Mirroring the main screen: enable the Virtual Display Driver monitor to extend",
                true);
     }
 
@@ -363,6 +368,19 @@ void RunSession(SOCKET sock, const Options& opt) {
                 Log("Tablet stopped responding");
                 break;
             }
+            // Display layout changed (Duplicate/Extend, monitor moved or resized): once it
+            // settles, restart if the screen we should stream is no longer this one.
+            uint64_t changedAt = g_displayChangedAt;
+            if (changedAt && lastPing - changedAt > 700000) {
+                g_displayChangedAt.compare_exchange_strong(changedAt, 0);
+                OutputInfo now;
+                if (ChooseOutput(opt.display, now) &&
+                    (now.gdiName != output.gdiName || !EqualRect(&now.desktop, &output.desktop))) {
+                    Log("Display layout changed (%s -> %s): restarting the stream", Narrow(output.gdiName).c_str(),
+                        Narrow(now.gdiName).c_str());
+                    break;
+                }
+            }
             if (AppSettings().SaverActive() != saver) {
                 Log("Battery saver %s: restarting the stream", saver ? "off" : "on");
                 break;
@@ -376,7 +394,9 @@ void RunSession(SOCKET sock, const Options& opt) {
         int r = cap.Acquire(pending ? 0 : 2);
         if (r < 0) {
             Sleep(200);
-            if (!cap.Init(output, w, h)) break;
+            // Keep the D3D device the encoder was set up with; restart the session if
+            // the output changed too much for that.
+            if (!cap.Reacquire(output)) break;
             keyRequested = true;
             continue;
         }
@@ -673,6 +693,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     Tray::Callbacks cb;
     cb.onQualityChanged = [] { g_restart = true; };
     cb.onQuit = [] { g_quit = true; };
+    cb.onDisplayChanged = [] { g_displayChangedAt = NowUs(); };
     if (tray.Create(inst, cb)) g_tray = &tray;
     else Log("Notification-area icon unavailable");
 

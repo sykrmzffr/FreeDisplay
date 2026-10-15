@@ -430,6 +430,10 @@ LRESULT CALLBACK Tray::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             self->ApplyStatus();
             return 0;
         }
+        if (msg == WM_DISPLAYCHANGE) {
+            if (self->cb_.onDisplayChanged) self->cb_.onDisplayChanged();
+            return 0;
+        }
         if (msg == kShowSettingsMsg) { // FreeDisplay was started again (e.g. from the Start menu)
             self->ShowSettings();
             return 0;

@@ -39,5 +39,5 @@ cl /nologo /std:c++20 /EHsc /O2 /W3 /MT /DUNICODE /D_UNICODE /DWIN32_LEAN_AND_ME
   /I third_party /Fo:out\ /Fe:out\FreeDisplay.exe ^
   src\main.cpp src\Adb.cpp src\Capture.cpp src\Encoder.cpp src\AmfEncoder.cpp src\NvencEncoder.cpp src\Input.cpp src\Installer.cpp src\Settings.cpp src\Tray.cpp src\VirtualMonitor.cpp ^
   out\FreeDisplay.res ^
-  /link /SUBSYSTEM:WINDOWS /MANIFEST:NO d3d11.lib dxgi.lib mfplat.lib mf.lib mfuuid.lib ws2_32.lib user32.lib ole32.lib oleaut32.lib winmm.lib strmiids.lib shell32.lib gdi32.lib advapi32.lib comctl32.lib
+  /link /SUBSYSTEM:WINDOWS /MANIFEST:NO d3d11.lib dxgi.lib mfplat.lib mf.lib mfuuid.lib ws2_32.lib user32.lib ole32.lib oleaut32.lib winmm.lib strmiids.lib shell32.lib gdi32.lib advapi32.lib comctl32.lib dwmapi.lib
 exit /b %errorlevel%

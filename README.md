@@ -51,7 +51,14 @@ The tray icon's menu has:
 - **Touch input / Pen input**: turn tablet input on or off (applies instantly).
 - **Video quality**: Sharp (full resolution), Balanced (75%, default),
   Fastest (50%). Lower = less latency, softer text.
+- **Move windows back when the tablet disconnects** (on by default): when the
+  cable is unplugged, or the tablet app is closed for 3 seconds, windows on the
+  tablet screen and the mouse pointer return to the main screen. The virtual
+  monitor itself stays on: switching the driver off and on worked, but
+  capturing it afterwards froze Windows in testing.
 - **Start with Windows**, **Open log**, **Quit**.
+
+`FreeDisplay.exe --move-windows-back` does the window move by hand.
 
 Arrange the extra monitor in **Windows Settings > System > Display** like any monitor.
 

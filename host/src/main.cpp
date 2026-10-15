@@ -272,10 +272,12 @@ void RunSession(SOCKET sock, const Options& opt) {
 
     std::atomic<bool> alive{true};
     std::atomic<bool> keyRequested{true};
+    std::atomic<uint64_t> lastHeard{NowUs()}; // the tablet answers pings every 500 ms
     std::thread reader([&] {
         uint8_t t;
         std::vector<uint8_t> p;
         while (alive && RecvMsg(sock, t, p)) {
+            lastHeard = NowUs();
             if (t == proto::kInput) {
                 proto::InputEvent ev;
                 if (proto::ParseInput(p, ev)) input.Handle(ev);
@@ -352,6 +354,10 @@ void RunSession(SOCKET sock, const Options& opt) {
             proto::Writer pw;
             pw.u64(lastPing);
             if (!SendMsg(sock, proto::kPing, pw.buf)) break;
+            if (lastPing - lastHeard > 1500000) {
+                Log("Tablet stopped responding");
+                break;
+            }
         }
         if (!enc->Pump(onOutput)) break;
         if (!enc->WantsInput()) {
@@ -459,6 +465,15 @@ void HostLoop(Options opt) {
 
     std::string current;
     std::string lastState = "?";
+    uint64_t noDeviceSince = 0;  // debounces brief adb hiccups
+    uint64_t sessionEndedAt = 0; // last stream end while the cable stayed in, 0 if none
+    bool needRescue = false;     // a stream ran since windows were last moved back
+    auto rescueWindows = [&](const char* why) {
+        needRescue = false;
+        if (!AppSettings().moveWindowsBack) return;
+        int n = VirtualMonitor::MoveWindowsToPrimary();
+        Log("%s: moved %d window(s) back to the main screen", why, n);
+    };
     while (!g_quit) {
         if (SuperDisplayRunning()) {
             static bool warned = false;
@@ -485,10 +500,14 @@ void HostLoop(Options opt) {
                 lastState = state;
             }
             current.clear();
-            Sleep(1000);
+            sessionEndedAt = 0;
+            if (!noDeviceSince) noDeviceSince = NowUs();
+            if (needRescue && NowUs() - noDeviceSince > 1500000) rescueWindows("Tablet unplugged");
+            Sleep(500);
             continue;
         }
         lastState = "device";
+        noDeviceSince = 0;
         if (serial != current) {
             Log("Tablet connected: %s", serial.c_str());
             Status(L"Tablet connected, starting app...");
@@ -500,10 +519,17 @@ void HostLoop(Options opt) {
             current = serial;
         }
         SOCKET c = AcceptWithTimeout(listener, 1000);
-        if (c == INVALID_SOCKET) continue;
+        if (c == INVALID_SOCKET) {
+            // Cable still in but the tablet app was closed (quality restarts reconnect at once).
+            if (needRescue && sessionEndedAt && NowUs() - sessionEndedAt > 3000000) rescueWindows("Tablet app closed");
+            continue;
+        }
         Log("Tablet app connected");
+        sessionEndedAt = 0;
+        needRescue = true;
         RunSession(c, opt);
         closesocket(c);
+        sessionEndedAt = NowUs();
         if (!g_quit) Status(L"Tablet connected, waiting for the app");
     }
     closesocket(listener);
@@ -562,6 +588,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
             setup = Setup::Uninstall;
         } else if (a == L"--quiet") {
             quiet = true;
+        } else if (a == L"--move-windows-back") {
+            if (!stdoutRedirected) AttachParentConsole();
+            printf("Moved %d window(s) to the main screen\n", VirtualMonitor::MoveWindowsToPrimary());
+            return 0;
         } else {
             if (!stdoutRedirected) AttachParentConsole();
             printf("Usage: FreeDisplay [--console] [--list] [--display N] [--fps N] [--bitrate Mbps]\n"

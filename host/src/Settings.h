@@ -9,6 +9,7 @@ struct Settings {
     std::atomic<bool> pen{true};            // inject stylus input
     std::atomic<int> qualityPct{75};        // encode size as % of the monitor (100/75/50)
     std::atomic<bool> startWithWindows{false};
+    std::atomic<bool> moveWindowsBack{true}; // rescue windows from the tablet screen when it goes away
 
     void Load();
     void Save() const;

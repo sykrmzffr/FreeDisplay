@@ -18,6 +18,7 @@ enum MenuId : UINT {
     kIdBalanced,
     kIdFast,
     kIdAutostart,
+    kIdMoveBack,
     kIdLog,
     kIdQuit,
 };
@@ -110,6 +111,8 @@ void Tray::ShowMenu() {
     AppendMenuW(menu, MF_STRING | (s.touch ? MF_CHECKED : 0), kIdTouch, L"&Touch input");
     AppendMenuW(menu, MF_STRING | (s.pen ? MF_CHECKED : 0), kIdPen, L"&Pen input");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(quality), L"&Video quality");
+    AppendMenuW(menu, MF_STRING | (s.moveWindowsBack ? MF_CHECKED : 0), kIdMoveBack,
+                L"&Move windows back when the tablet disconnects");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (s.startWithWindows ? MF_CHECKED : 0), kIdAutostart, L"Start with &Windows");
     AppendMenuW(menu, MF_STRING, kIdLog, L"Open &log");
@@ -129,6 +132,7 @@ void Tray::ShowMenu() {
     case kIdSharp: s.qualityPct = 100; break;
     case kIdBalanced: s.qualityPct = 75; break;
     case kIdFast: s.qualityPct = 50; break;
+    case kIdMoveBack: s.moveWindowsBack = !s.moveWindowsBack; break;
     case kIdAutostart:
         if (Settings::ApplyStartWithWindows(!s.startWithWindows)) s.startWithWindows = !s.startWithWindows;
         break;
@@ -143,8 +147,8 @@ void Tray::ShowMenu() {
         return;
     }
     s.Save();
-    Log("Settings: touch=%d pen=%d quality=%d%% startWithWindows=%d", int(s.touch), int(s.pen),
-        int(s.qualityPct), int(s.startWithWindows));
+    Log("Settings: touch=%d pen=%d quality=%d%% startWithWindows=%d moveWindowsBack=%d", int(s.touch),
+        int(s.pen), int(s.qualityPct), int(s.startWithWindows), int(s.moveWindowsBack));
     if (s.qualityPct != oldQuality && cb_.onQualityChanged) cb_.onQualityChanged();
 }
 

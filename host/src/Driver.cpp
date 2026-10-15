@@ -4,6 +4,8 @@
 #include <newdev.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <algorithm>
+#include <cstdio>
 #include <string>
 #include <iterator>
 #include <vector>
@@ -26,19 +28,23 @@ constexpr int kErrNotOurs = 0x20000002;
 // every global refresh rate plus its own. This driver version can only report a
 // limited number of modes: with 24 resolutions x 5 rates (~120 modes) it logged
 // "Input buffer is too small for target modes" and created no monitor at all;
-// ~49 modes worked. The host picks the closest one for each tablet and scales the
-// picture, so a close match is enough.
+// ~49 modes worked. So there are a few common shapes (16:9, 20:9 phones, 16:10,
+// 4:3, 3:2), which the host scales to any tablet, plus the exact sizes of the last
+// tablets used ("learned", see AddResolution), which take effect after a restart.
 constexpr int kResolutions[][2] = {
-    {1920, 1080}, {1920, 1200}, {2000, 1200}, {2048, 1536},
-    {2560, 1600}, {2880, 1800}, {2960, 1848}, {3200, 2136},
+    {1920, 1080}, {2400, 1080}, {1920, 1200}, {2560, 1600}, {2048, 1536}, {2160, 1440},
 };
+constexpr size_t kMaxLearned = 2;
 constexpr int kRefreshRates[] = {60, 120};
-static_assert(std::size(kResolutions) * 2 * (std::size(kRefreshRates) + 1) <= 48, "too many display modes for VDD");
+static_assert((std::size(kResolutions) + kMaxLearned) * 2 * (std::size(kRefreshRates) + 1) <= 48,
+              "too many display modes for VDD");
 
-// Identifies settings files FreeDisplay wrote; bump when the content changes so
-// installs with an older file get the new one.
+// Identifies settings files FreeDisplay wrote. Files without portrait modes (v1)
+// are outdated; a v2 file (fixed list) is kept until a tablet needs a new size.
 constexpr const char* kSettingsMarker = "Written by FreeDisplay";
-constexpr const char* kSettingsVersion = "settings v2 (landscape + portrait)";
+constexpr const char* kSettingsVersion = "settings v3 (landscape + portrait)";
+constexpr const char* kPortraitTag = "portrait";
+constexpr const char* kLearnedTag = "learned:";
 
 // Name of the GPU driving the primary display. VDD renders on it, which avoids
 // copies between GPUs on hybrid laptops; left to "default" it picked the
@@ -102,11 +108,18 @@ bool WriteText(const std::wstring& path, const std::string& text) {
     return ok;
 }
 
-std::string DefaultSettingsXml() {
+using Size = std::pair<int, int>;
+
+std::string SizeText(Size s) { return std::to_string(s.first) + "x" + std::to_string(s.second); }
+
+std::string DefaultSettingsXml(const std::vector<Size>& learned = {}) {
+    std::string learnedText;
+    for (Size s : learned) learnedText += (learnedText.empty() ? "" : ",") + SizeText(s);
     std::string xml =
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n"
         "<!-- " + std::string(kSettingsMarker) + ", " + kSettingsVersion + ". Virtual Display Driver settings;\r\n"
-        "     see https://github.com/VirtualDrivers/Virtual-Display-Driver -->\r\n"
+        "     see https://github.com/VirtualDrivers/Virtual-Display-Driver\r\n"
+        "     " + kLearnedTag + learnedText + " -->\r\n"
         "<vdd_settings>\r\n"
         "    <monitors>\r\n        <count>1</count>\r\n    </monitors>\r\n"
         "    <gpu>\r\n        <friendlyname>" + XmlEscape(PrimaryGpuName()) + "</friendlyname>\r\n    </gpu>\r\n"
@@ -115,9 +128,13 @@ std::string DefaultSettingsXml() {
     xml +=
         "    </global>\r\n"
         "    <resolutions>\r\n";
+    std::vector<Size> sizes;
+    for (const auto& r : kResolutions) sizes.push_back({r[0], r[1]});
+    for (Size s : learned)
+        if (std::find(sizes.begin(), sizes.end(), s) == sizes.end()) sizes.push_back(s);
     for (int portrait = 0; portrait < 2; portrait++) {
-        for (const auto& r : kResolutions) {
-            int w = portrait ? r[1] : r[0], h = portrait ? r[0] : r[1];
+        for (Size s : sizes) {
+            int w = portrait ? s.second : s.first, h = portrait ? s.first : s.second;
             xml += "        <resolution><width>" + std::to_string(w) + "</width><height>" + std::to_string(h) +
                    "</height><refresh_rate>60</refresh_rate></resolution>\r\n";
         }
@@ -138,15 +155,37 @@ std::string DefaultSettingsXml() {
     return xml;
 }
 
-// Start of the settings file, or empty when there is none.
+// The settings file (it is small), or empty when there is none.
 std::string ReadHead(const std::wstring& path) {
     HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
     if (f == INVALID_HANDLE_VALUE) return {};
-    char head[512] = {};
+    std::string text(64 * 1024, '\0');
     DWORD got = 0;
-    ReadFile(f, head, sizeof head - 1, &got, nullptr);
+    ReadFile(f, text.data(), DWORD(text.size()), &got, nullptr);
     CloseHandle(f);
-    return head;
+    text.resize(got);
+    return text;
+}
+
+// Sizes learned from tablets, as listed in a v3 file's header (newest first).
+std::vector<Size> LearnedSizes(const std::string& text) {
+    std::vector<Size> sizes;
+    size_t at = text.find(kLearnedTag);
+    if (at == std::string::npos) return sizes;
+    const char* p = text.c_str() + at + strlen(kLearnedTag);
+    int w, h, n;
+    while (sizes.size() < kMaxLearned && sscanf_s(p, "%dx%d%n", &w, &h, &n) == 2) {
+        sizes.push_back({w, h});
+        p += n;
+        if (*p != ',') break;
+        p++;
+    }
+    return sizes;
+}
+
+bool HasMode(const std::string& text, Size s) {
+    return text.find("<width>" + std::to_string(s.first) + "</width><height>" + std::to_string(s.second) +
+                     "</height>") != std::string::npos;
 }
 
 std::wstring SettingsPath() { return InstallDir() + L"\\vdd_settings.xml"; }
@@ -321,13 +360,41 @@ int Install() {
 bool SettingsOutdated() {
     std::wstring path = SettingsPath();
     if (HasOwnSettings(path)) return false;
-    return ReadHead(path).find(kSettingsVersion) == std::string::npos;
+    return ReadHead(path).find(kPortraitTag) == std::string::npos;
 }
 
 int UpdateSettings() {
     std::wstring path = SettingsPath();
     if (HasOwnSettings(path)) return 0;
-    return WriteText(path, DefaultSettingsXml()) ? 0 : int(GetLastError() ? GetLastError() : 1);
+    return WriteText(path, DefaultSettingsXml(LearnedSizes(ReadHead(path)))) ? 0
+                                                                            : int(GetLastError() ? GetLastError() : 1);
+}
+
+std::pair<int, int> ModeFor(int w, int h) {
+    int lw = (std::max)(w, h), lh = (std::min)(w, h); // landscape; portrait is added alongside
+    if (lw > 4096) { // keep the shape, stay within what encoders and decoders handle
+        lh = int(double(lh) * 4096 / lw);
+        lw = 4096;
+    }
+    return {lw & ~1, lh & ~1};
+}
+
+bool AddResolution(int w, int h) {
+    Size s = ModeFor(w, h);
+    if (s.second < 480) return false;
+    std::wstring path = SettingsPath();
+    if (!Present() || HasOwnSettings(path)) return false;
+    std::string text = ReadHead(path);
+    if (text.empty()) return false;
+    if (HasMode(text, s) && HasMode(text, {s.second, s.first})) return true; // already there (maybe pending)
+    std::vector<Size> learned = LearnedSizes(text);
+    learned.erase(std::remove(learned.begin(), learned.end(), s), learned.end());
+    learned.insert(learned.begin(), s);
+    if (learned.size() > kMaxLearned) learned.resize(kMaxLearned);
+    bool ok = WriteText(path, DefaultSettingsXml(learned));
+    Log("Added %s to the virtual monitor's resolutions (after a restart): %s", SizeText(s).c_str(),
+        ok ? "ok" : "failed, settings folder not writable");
+    return ok;
 }
 
 bool RunElevatedUpdateSettings() { return RunSelfElevated(L"--update-driver-settings", nullptr); }

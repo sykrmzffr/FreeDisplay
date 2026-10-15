@@ -272,6 +272,15 @@ void RunSession(SOCKET sock, const Options& opt) {
         OutputInfo changed;
         if (ChooseOutput(opt.display, changed)) output = changed;
     }
+    // A tablet whose exact size the virtual monitor lacks gets a scaled picture; its
+    // size is added to the driver settings so it fits exactly after a restart.
+    bool restartForExactFit = false;
+    if (isVdd) {
+        auto [modeW, modeH] = driver::ModeFor(tabW, tabH);
+        UINT wantW = tabletPortrait ? modeH : modeW, wantH = tabletPortrait ? modeW : modeH;
+        restartForExactFit = !VirtualMonitor::HasMode(output.gdiName, wantW, wantH) &&
+                             driver::AddResolution(tabW, tabH);
+    }
 
     int scalePct = opt.scalePct > 0 ? opt.scalePct : AppSettings().qualityPct.load();
     UINT w = UINT((output.desktop.right - output.desktop.left) * scalePct / 100) & ~1u;
@@ -304,7 +313,8 @@ void RunSession(SOCKET sock, const Options& opt) {
     cfg.u32(fps); // the tablet matches its screen refresh to this
     if (!SendMsg(sock, proto::kVideoConfig, cfg.buf)) return;
     Status(L"Streaming to " + Widen(name) + L" (" + std::to_wstring(w) + L"x" + std::to_wstring(h) + L" @ " +
-               std::to_wstring(fps) + L" Hz" + (saver ? L", battery saver" : L"") + L")",
+               std::to_wstring(fps) + L" Hz" + (saver ? L", battery saver" : L"") + L")" +
+               (restartForExactFit ? L". Restart Windows once for a sharper, exact fit on this tablet" : L""),
            true);
     g_restart = false;
 

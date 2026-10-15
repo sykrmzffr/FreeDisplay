@@ -141,6 +141,14 @@ bool MatchTablet(const std::wstring& gdiName, UINT tabletW, UINT tabletH, UINT h
     return rc == DISP_CHANGE_SUCCESSFUL;
 }
 
+bool HasMode(const std::wstring& gdiName, UINT w, UINT h) {
+    DEVMODEW dm{};
+    dm.dmSize = sizeof dm;
+    for (DWORD i = 0; EnumDisplaySettingsW(gdiName.c_str(), i, &dm); i++)
+        if (dm.dmPelsWidth == w && dm.dmPelsHeight == h) return true;
+    return false;
+}
+
 int MoveWindowsToPrimary() {
     MonitorRects vdd;
     std::wstring name = Find();

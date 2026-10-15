@@ -1,5 +1,6 @@
 #pragma once
 #include <windows.h>
+#include <utility>
 
 // Installs and removes the Virtual Display Driver (MttVDD), which provides the
 // extra monitor. FreeDisplay.exe carries the unmodified, signed driver package
@@ -32,6 +33,16 @@ bool SettingsOutdated();
 // when the folder allows it, else use RunElevatedUpdateSettings (--update-driver-settings).
 int UpdateSettings();
 bool RunElevatedUpdateSettings();
+
+// The virtual monitor resolution FreeDisplay uses for a w x h tablet: its size in
+// landscape (portrait is offered too), limited to 4096 wide.
+std::pair<int, int> ModeFor(int w, int h);
+
+// Makes sure the driver settings offer ModeFor(w, h), adding it as one of the
+// last few tablets' sizes if needed (no admin rights required when the settings
+// folder allows it). New modes appear after a restart. True if the settings now
+// have the size; false if they are the user's own or could not be written.
+bool AddResolution(int w, int h);
 
 // Elevated entry points (--install-driver / --uninstall-driver). Return exit codes.
 int Install();

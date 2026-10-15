@@ -99,7 +99,7 @@ class StreamClient(
             writeInt(screenHeight)
             writeInt(dpi)
             writeInt(refreshHz)
-            val (maxW, maxH) = VideoDecoder.maxSize()
+            val (maxW, maxH) = VideoDecoder.maxSize(screenWidth, screenHeight)
             writeInt(maxW)
             writeInt(maxH)
             write(deviceName.toByteArray(Charsets.UTF_8))

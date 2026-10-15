@@ -171,18 +171,29 @@ class VideoDecoder(
         private const val TAG = "FreeDisplay"
 
         /**
-         * Largest picture (width, height) the AVC decoder we would use accepts, so the
-         * host can size the stream to fit (some decoders stop at 4096x2176, which a
-         * portrait stream can exceed). Prefers the low-latency variants, like createConfigured.
+         * Largest picture with the shape of a [w] x [h] screen that the AVC decoder we
+         * would use accepts, so the host can size the stream to fit. Width and height
+         * limits alone are not enough: a decoder taking 4096 wide and 4096 tall may
+         * still stop at 4096x2176 in total. Prefers the low-latency variants, like
+         * createConfigured.
          */
-        fun maxSize(): Pair<Int, Int> {
+        fun maxSize(w: Int, h: Int): Pair<Int, Int> {
             val avc = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter { info ->
                 !info.isEncoder && !info.name.contains("secure", ignoreCase = true) &&
                     info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_AVC, ignoreCase = true) }
             }
             val best = avc.firstOrNull { it.name.contains("low_latency", ignoreCase = true) } ?: avc.firstOrNull()
             val caps = best?.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)?.videoCapabilities
-                ?: return Pair(1920, 1920)
+                ?: return Pair(1920, 1080)
+            // Scale the screen size up (2x at most: the host never sends more than the
+            // monitor it captures) or down until the decoder takes it.
+            var scale = 2.0
+            while (scale > 0.1) {
+                val sw = (w * scale).toInt() and 15.inv()
+                val sh = (h * scale).toInt() and 15.inv()
+                if (sw > 0 && sh > 0 && caps.isSizeSupported(sw, sh)) return Pair(sw, sh)
+                scale -= 0.02
+            }
             return Pair(caps.supportedWidths.upper, caps.supportedHeights.upper)
         }
 

@@ -25,6 +25,9 @@ bool IsAttached();
 // registry update). Returns true when the mode was changed.
 bool MatchTablet(const std::wstring& gdiName, UINT tabletW, UINT tabletH, UINT hz);
 
+// True when the VDD monitor offers w x h (in that orientation).
+bool HasMode(const std::wstring& gdiName, UINT w, UINT h);
+
 // Moves app windows (and the pointer) off the VDD monitor onto the primary
 // monitor, keeping their state (normal/maximized/minimized) and their place
 // relative to the screen. Returns the number of windows moved.

@@ -1,6 +1,16 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+// Release signing key, kept outside the repository. Point the Gradle property
+// freedisplay.signing (e.g. in ~/.gradle/gradle.properties) at a properties file
+// with storeFile, storePassword, keyAlias and keyPassword. Without it, release
+// builds are signed with the local debug key.
+val releaseSigning: Properties? = providers.gradleProperty("freedisplay.signing").orNull?.let { path ->
+    Properties().apply { file(path).inputStream().use { load(it) } }
 }
 
 android {
@@ -11,15 +21,25 @@ android {
         applicationId = "com.freedisplay.client"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9 // keep in sync with kAppVersionCode in host/src/main.cpp
-        versionName = "1.1.0"
+        versionCode = 10 // keep in sync with kAppVersionCode in host/src/main.cpp
+        versionName = "1.1.2"
+    }
+
+    signingConfigs {
+        if (releaseSigning != null) {
+            create("release") {
+                storeFile = file(releaseSigning.getProperty("storeFile"))
+                storePassword = releaseSigning.getProperty("storePassword")
+                keyAlias = releaseSigning.getProperty("keyAlias")
+                keyPassword = releaseSigning.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Debug-signed so the host can install it without a release keystore.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (releaseSigning != null) "release" else "debug")
         }
     }
     compileOptions {

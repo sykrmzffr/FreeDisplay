@@ -30,7 +30,7 @@ namespace {
 
 constexpr const wchar_t* kPackage = L"com.freedisplay.client";
 constexpr const wchar_t* kActivity = L"com.freedisplay.client/.MainActivity";
-constexpr int kAppVersionCode = 9; // keep in sync with android/app/build.gradle.kts
+constexpr int kAppVersionCode = 10; // keep in sync with android/app/build.gradle.kts
 
 struct Options {
     int display = -1;     // -1: auto (VDD monitor, else primary)
@@ -172,6 +172,14 @@ bool PrepareDevice(const Adb& adb, const std::string& serial, const Options& opt
                 Log("Installing tablet app (installed version %d, need %d)...", installed, kAppVersionCode);
                 std::string out;
                 int rc = adb.RunOn(serial, L"install -r -g \"" + apk + L"\"", &out, 120000);
+                // Builds up to 1.1.1 were signed with a development key; Android refuses to
+                // update an app whose signing key changed, so replace it (it keeps no data).
+                if (rc != 0 && (out.find("INSTALL_FAILED_UPDATE_INCOMPATIBLE") != std::string::npos ||
+                                out.find("signatures do not match") != std::string::npos)) {
+                    Log("Tablet app was signed with another key; reinstalling it");
+                    adb.RunOn(serial, std::wstring(L"uninstall ") + kPackage, &out);
+                    rc = adb.RunOn(serial, L"install -g \"" + apk + L"\"", &out, 120000);
+                }
                 Log("adb install: %s", rc == 0 ? "ok" : out.c_str());
                 if (rc != 0) return false;
             }

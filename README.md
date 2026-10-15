@@ -90,8 +90,12 @@ tablet app and adb (from SDK platform-tools) embedded. The result is copied to
 `host\out\FreeDisplay.exe` runs in place without offering to install, because
 `FreeDisplay.apk` sits next to it.
 
-The tablet app is signed with this PC's Android debug key. If you build on
-another PC, uninstall the tablet app once so the new build can be installed.
+Official releases sign the tablet app with the project's release key, which is
+kept outside this repository. To sign your own builds, set the Gradle property
+`freedisplay.signing` (for example in `%USERPROFILE%\.gradle\gradle.properties`)
+to a properties file with `storeFile`, `storePassword`, `keyAlias` and
+`keyPassword`; without it, builds use your local debug key. FreeDisplay replaces
+a tablet app signed with a different key automatically.
 
 ## Encoder selection
 
@@ -106,7 +110,18 @@ those fail) -> Media Foundation.
 - `host/tools/nvenctest.cpp`: NVENC speed test without changing displays.
 - `host/tools/touchtest.cpp`, `pentest.cpp`: input-injection diagnostics.
 
+## License
+
+FreeDisplay is MIT licensed (see [LICENSE](LICENSE)). It is an independent
+project written from scratch: it contains no code from, and is not affiliated
+with, any commercial second-screen app. It is provided as is, without warranty.
+
 ## Third-party
 
-- `host/third_party/amf`: AMD AMF SDK headers (MIT).
+- `host/third_party/amf`: AMD AMF SDK headers (MIT, see its LICENSE.txt).
 - `host/third_party/nvenc`: NVENC API headers from FFmpeg nv-codec-headers (MIT).
+- `FreeDisplay.exe` bundles `adb` from the Android SDK Platform-Tools (Apache
+  License 2.0, part of the Android Open Source Project); its NOTICE.txt is
+  installed next to it in `adb\`.
+- Virtual Display Driver is a separate project and is not included; install it
+  from its own site.

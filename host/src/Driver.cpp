@@ -5,6 +5,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <string>
+#include <iterator>
 #include <vector>
 #include "Resources.h"
 #include "Util.h"
@@ -21,15 +22,39 @@ constexpr const wchar_t* kOurKey = L"SOFTWARE\\FreeDisplay";
 constexpr int kErrNoPayload = 0x20000001;
 constexpr int kErrNotOurs = 0x20000002;
 
-// Resolutions offered by the virtual monitor (each at every global refresh rate).
-// Covers common tablets and phones in landscape; the host scales the picture to
-// the tablet, so a close match also works.
+// Resolutions offered by the virtual monitor, each at every global refresh rate
+// plus its own. This driver version can only report a limited number of modes:
+// with 24 resolutions x 5 rates (~120 modes) it logged "Input buffer is too small
+// for target modes" and created no monitor at all; ~49 modes worked. Keep
+// kResolutions x (kRefreshRates + 1) well below that. The host scales the picture
+// to the tablet, so a close match is enough.
 constexpr int kResolutions[][2] = {
-    {1280, 800},  {1340, 800},  {1366, 768},  {1920, 1080}, {1920, 1200}, {2000, 1200}, {2048, 1536},
-    {2160, 1620}, {2224, 1668}, {2360, 1640}, {2388, 1668}, {2400, 1080}, {2560, 1440}, {2560, 1600},
-    {2732, 2048}, {2800, 1752}, {2880, 1800}, {2944, 1840}, {2960, 1848}, {3000, 2000}, {3200, 2000},
-    {3200, 2136}, {3840, 2160}, {3840, 2400},
+    {1920, 1080}, {1920, 1200}, {2000, 1200}, {2048, 1536}, {2560, 1600},
+    {2800, 1752}, {2880, 1800}, {2960, 1848}, {3000, 2000}, {3200, 2136},
 };
+constexpr int kRefreshRates[] = {60, 90, 120};
+static_assert(std::size(kResolutions) * (std::size(kRefreshRates) + 1) <= 40, "too many display modes for VDD");
+
+// Name of the GPU driving the primary display. VDD renders on it, which avoids
+// copies between GPUs on hybrid laptops; left to "default" it picked the
+// discrete GPU on the test laptop.
+std::string PrimaryGpuName() {
+    DISPLAY_DEVICEW dd{sizeof dd};
+    for (DWORD i = 0; EnumDisplayDevicesW(nullptr, i, &dd, 0); i++, dd.cb = sizeof dd)
+        if (dd.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) return Narrow(dd.DeviceString);
+    return "default";
+}
+
+std::string XmlEscape(const std::string& s) {
+    std::string r;
+    for (char c : s) {
+        if (c == '&') r += "&amp;";
+        else if (c == '<') r += "&lt;";
+        else if (c == '>') r += "&gt;";
+        else r += c;
+    }
+    return r;
+}
 
 bool HasHardwareId(HDEVINFO set, SP_DEVINFO_DATA& dev) {
     wchar_t hw[1024] = {};
@@ -79,12 +104,10 @@ std::string DefaultSettingsXml() {
         "     https://github.com/VirtualDrivers/Virtual-Display-Driver -->\r\n"
         "<vdd_settings>\r\n"
         "    <monitors>\r\n        <count>1</count>\r\n    </monitors>\r\n"
-        "    <gpu>\r\n        <friendlyname>default</friendlyname>\r\n    </gpu>\r\n"
-        "    <global>\r\n"
-        "        <g_refresh_rate>60</g_refresh_rate>\r\n"
-        "        <g_refresh_rate>90</g_refresh_rate>\r\n"
-        "        <g_refresh_rate>120</g_refresh_rate>\r\n"
-        "        <g_refresh_rate>144</g_refresh_rate>\r\n"
+        "    <gpu>\r\n        <friendlyname>" + XmlEscape(PrimaryGpuName()) + "</friendlyname>\r\n    </gpu>\r\n"
+        "    <global>\r\n";
+    for (int hz : kRefreshRates) xml += "        <g_refresh_rate>" + std::to_string(hz) + "</g_refresh_rate>\r\n";
+    xml +=
         "    </global>\r\n"
         "    <resolutions>\r\n";
     for (const auto& r : kResolutions) {
@@ -105,6 +128,17 @@ std::string DefaultSettingsXml() {
         "    </options>\r\n"
         "</vdd_settings>\r\n";
     return xml;
+}
+
+// True when a settings file exists that FreeDisplay did not write.
+bool HasOwnSettings(const std::wstring& path) {
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return false;
+    char head[512] = {};
+    DWORD got = 0;
+    ReadFile(f, head, sizeof head - 1, &got, nullptr);
+    CloseHandle(f);
+    return strstr(head, "Written by FreeDisplay") == nullptr;
 }
 
 ULONGLONG NowFiletime() {
@@ -218,8 +252,9 @@ int Install() {
         !WriteResource(IDR_VDD_CAT, base + L"MttVDD.cat") ||
         !WriteResource(IDR_VDD_LICENSE, base + L"LICENSE-VirtualDisplayDriver.txt"))
         return kErrNoPayload;
-    if (GetFileAttributesW((base + L"vdd_settings.xml").c_str()) == INVALID_FILE_ATTRIBUTES)
-        WriteText(base + L"vdd_settings.xml", DefaultSettingsXml());
+    // Write the settings unless the user has their own (ours carry a marker comment,
+    // so a file from an older FreeDisplay gets replaced).
+    if (!HasOwnSettings(base + L"vdd_settings.xml")) WriteText(base + L"vdd_settings.xml", DefaultSettingsXml());
 
     // Tell the driver (and VDD's own tools) where its settings live.
     HKEY key;

@@ -18,7 +18,6 @@
 #include "NvencEncoder.h"
 #include "Input.h"
 #include "Installer.h"
-#include "MonitorSwitch.h"
 #include "Protocol.h"
 #include "Settings.h"
 #include "Tray.h"
@@ -66,10 +65,6 @@ std::unique_ptr<VideoEncoder> OpenEncoder(const Options& opt, Capture& cap, UINT
 
 std::atomic<bool> g_quit{false};
 std::atomic<bool> g_restart{false}; // end the current session so it restarts with new settings
-std::atomic<bool> g_switchReady{false}; // virtual monitor on/off tasks are set up
-
-// True when the virtual monitor should follow the tablet connection.
-bool AutoSwitch() { return g_switchReady && AppSettings().autoMonitor && !MonitorSwitch::Broken(); }
 DWORD g_uiThread = 0;
 Tray* g_tray = nullptr;
 
@@ -241,7 +236,6 @@ void RunSession(SOCKET sock, const Options& opt) {
     UINT h = UINT((output.desktop.bottom - output.desktop.top) * scalePct / 100) & ~1u;
     UINT bitrate = opt.bitrateMbps ? opt.bitrateMbps * 1000000 : AutoBitrate(w, h, std::min(fps, 60u));
 
-    MonitorSwitch::CaptureGuard captureGuard; // no monitor switching while capturing
     Capture cap;
     Input input;
     if (!cap.Init(output, w, h)) {
@@ -278,12 +272,10 @@ void RunSession(SOCKET sock, const Options& opt) {
 
     std::atomic<bool> alive{true};
     std::atomic<bool> keyRequested{true};
-    std::atomic<uint64_t> lastHeard{NowUs()}; // the tablet answers pings every 500 ms
     std::thread reader([&] {
         uint8_t t;
         std::vector<uint8_t> p;
         while (alive && RecvMsg(sock, t, p)) {
-            lastHeard = NowUs();
             if (t == proto::kInput) {
                 proto::InputEvent ev;
                 if (proto::ParseInput(p, ev)) input.Handle(ev);
@@ -360,10 +352,6 @@ void RunSession(SOCKET sock, const Options& opt) {
             proto::Writer pw;
             pw.u64(lastPing);
             if (!SendMsg(sock, proto::kPing, pw.buf)) break;
-            if (lastPing - lastHeard > 1500000) {
-                Log("Tablet stopped responding");
-                break;
-            }
         }
         if (!enc->Pump(onOutput)) break;
         if (!enc->WantsInput()) {
@@ -469,14 +457,8 @@ void HostLoop(Options opt) {
         return;
     }
 
-    g_switchReady = MonitorSwitch::Available();
-    Log("Virtual monitor switching: %s",
-        g_switchReady ? (AppSettings().autoMonitor ? "on" : "off in settings") : "not set up");
-    if (!g_switchReady) AppSettings().autoMonitor = false; // shown unchecked until set up (not saved)
-
     std::string current;
     std::string lastState = "?";
-    uint64_t noDeviceSince = NowUs(); // debounces brief adb hiccups before removing the monitor
     while (!g_quit) {
         if (SuperDisplayRunning()) {
             static bool warned = false;
@@ -503,23 +485,12 @@ void HostLoop(Options opt) {
                 lastState = state;
             }
             current.clear();
-            if (!noDeviceSince) noDeviceSince = NowUs();
-            // Unplugged: remove the extra monitor so nothing gets lost on it.
-            if (AutoSwitch() && NowUs() - noDeviceSince > 1500000 && MonitorSwitch::IsOn()) {
-                Log("No tablet: turning the virtual monitor off");
-                MonitorSwitch::Set(false);
-            }
-            Sleep(500);
+            Sleep(1000);
             continue;
         }
         lastState = "device";
-        noDeviceSince = 0;
         if (serial != current) {
             Log("Tablet connected: %s", serial.c_str());
-            if (AutoSwitch() && !MonitorSwitch::IsOn()) {
-                Status(L"Tablet connected, adding the virtual monitor...");
-                MonitorSwitch::Set(true);
-            }
             Status(L"Tablet connected, starting app...");
             if (!PrepareDevice(adb, serial, opt)) {
                 Status(L"Could not start the tablet app (see log)");
@@ -528,10 +499,9 @@ void HostLoop(Options opt) {
             }
             current = serial;
         }
-        SOCKET c = AcceptWithTimeout(listener, 500);
+        SOCKET c = AcceptWithTimeout(listener, 1000);
         if (c == INVALID_SOCKET) continue;
         Log("Tablet app connected");
-        if (AutoSwitch() && !MonitorSwitch::IsOn()) MonitorSwitch::Set(true);
         RunSession(c, opt);
         closesocket(c);
         if (!g_quit) Status(L"Tablet connected, waiting for the app");
@@ -592,10 +562,6 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
             setup = Setup::Uninstall;
         } else if (a == L"--quiet") {
             quiet = true;
-        } else if (a == L"--setup-monitor-switch") { // run elevated by MonitorSwitch
-            return MonitorSwitch::SetupTasks();
-        } else if (a == L"--remove-monitor-switch") {
-            return MonitorSwitch::RemoveTasks();
         } else {
             if (!stdoutRedirected) AttachParentConsole();
             printf("Usage: FreeDisplay [--console] [--list] [--display N] [--fps N] [--bitrate Mbps]\n"
@@ -660,22 +626,6 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     Tray::Callbacks cb;
     cb.onQualityChanged = [] { g_restart = true; };
     cb.onQuit = [] { g_quit = true; };
-    cb.onAutoMonitorChanged = [] {
-        std::thread([] {
-            if (AppSettings().autoMonitor && !g_switchReady) {
-                Status(L"Waiting for permission to switch the virtual monitor...");
-                g_switchReady = MonitorSwitch::RunElevatedSetup() && MonitorSwitch::Available();
-                Log("Virtual monitor switching setup: %s", g_switchReady ? "done" : "declined or failed");
-                if (!g_switchReady) {
-                    AppSettings().autoMonitor = false;
-                    AppSettings().Save();
-                    Status(L"Monitor switching not set up (permission declined)", true);
-                }
-            } else if (!AppSettings().autoMonitor && g_switchReady) {
-                MonitorSwitch::Set(true); // back to an always-present monitor
-            }
-        }).detach();
-    };
     if (tray.Create(inst, cb)) g_tray = &tray;
     else Log("Notification-area icon unavailable");
 

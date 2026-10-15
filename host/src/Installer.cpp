@@ -3,7 +3,6 @@
 #include <shobjidl.h>
 #include <objbase.h>
 #include <vector>
-#include "MonitorSwitch.h"
 #include "Resources.h"
 #include "Settings.h"
 #include "Util.h"
@@ -309,16 +308,6 @@ bool Install(bool quiet, bool launch) {
     Settings& s = AppSettings();
     s.Load();
     s.startWithWindows = true;
-    // Removing the virtual monitor while unplugged needs a one-time admin approval.
-    if (!quiet && MonitorSwitch::VddInstalled() && !MonitorSwitch::Available()) {
-        MessageBoxW(nullptr,
-                    L"FreeDisplay can remove the extra monitor whenever the tablet is unplugged, so windows "
-                    L"and the pointer never get lost on a screen you can't see.\n\n"
-                    L"Windows will now ask for permission once. You can change this later in the tray menu.",
-                    kAppName, MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
-        MonitorSwitch::RunElevatedSetup();
-    }
-    if (MonitorSwitch::Available()) s.autoMonitor = true;
     s.Save();
 
     if (launch) RunHidden(L"\"" + exe + L"\"", 0, dir.c_str());
@@ -343,11 +332,6 @@ bool Uninstall(bool quiet) {
     }
     KillAdbServer(dir);
     KillAdbServer(KnownFolder(FOLDERID_LocalAppData) + L"\\FreeDisplay\\portable\\");
-    // Leave the virtual monitor on and remove the switching tasks (needs admin).
-    if (MonitorSwitch::Available()) {
-        MonitorSwitch::Set(true);
-        if (!quiet) MonitorSwitch::RunElevatedRemoval();
-    }
 
     HKEY key;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {

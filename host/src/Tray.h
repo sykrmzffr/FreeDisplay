@@ -9,7 +9,6 @@ public:
     struct Callbacks {
         std::function<void()> onQualityChanged; // the stream must restart at the new size
         std::function<void()> onQuit;
-        std::function<void()> onAutoMonitorChanged; // may need a one-time elevated setup
     };
 
     bool Create(HINSTANCE inst, Callbacks cb);

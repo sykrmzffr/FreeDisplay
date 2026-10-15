@@ -17,6 +17,7 @@
 #include "Encoder.h"
 #include "NvencEncoder.h"
 #include "Input.h"
+#include "Driver.h"
 #include "Installer.h"
 #include "Protocol.h"
 #include "Settings.h"
@@ -491,6 +492,14 @@ void HostLoop(Options opt) {
         return;
     }
     Log("Using %s", Narrow(adb.Path()).c_str());
+
+    // A freshly installed display driver is only captured after a restart (see Driver.h).
+    if (driver::RestartPending()) {
+        Log("Virtual Display Driver was installed; waiting for Windows to restart");
+        Status(L"Restart your PC to finish installing the display driver", true);
+        while (!g_quit) Sleep(500);
+        return;
+    }
     adb.Run(L"start-server");
 
     SOCKET listener = Listen(proto::kPort);
@@ -625,6 +634,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
             setup = Setup::Uninstall;
         } else if (a == L"--quiet") {
             quiet = true;
+        } else if (a == L"--install-driver") { // run elevated by the installer
+            return driver::Install();
+        } else if (a == L"--uninstall-driver") {
+            return driver::Uninstall();
         } else if (a == L"--move-windows-back") {
             if (!stdoutRedirected) AttachParentConsole();
             printf("Moved %d window(s) to the main screen\n", VirtualMonitor::MoveWindowsToPrimary());

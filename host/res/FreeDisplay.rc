@@ -11,9 +11,15 @@ IDR_ADBWINAPI    RCDATA "../out/payload/AdbWinApi.dll"
 IDR_ADBWINUSBAPI RCDATA "../out/payload/AdbWinUsbApi.dll"
 IDR_ADB_NOTICE   RCDATA "../out/payload/NOTICE.txt"
 
+// Virtual Display Driver, unmodified and signed (MIT, see third_party/vdd).
+IDR_VDD_INF      RCDATA "../third_party/vdd/MttVDD.inf"
+IDR_VDD_DLL      RCDATA "../third_party/vdd/MttVDD.dll"
+IDR_VDD_CAT      RCDATA "../third_party/vdd/MttVDD.cat"
+IDR_VDD_LICENSE  RCDATA "../third_party/vdd/LICENSE.txt"
+
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,1,2,0
- PRODUCTVERSION 1,1,2,0
+ FILEVERSION 1,2,0,0
+ PRODUCTVERSION 1,2,0,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS VOS_NT_WINDOWS32

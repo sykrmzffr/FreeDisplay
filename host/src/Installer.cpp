@@ -3,6 +3,7 @@
 #include <shobjidl.h>
 #include <objbase.h>
 #include <vector>
+#include "Driver.h"
 #include "Resources.h"
 #include "Settings.h"
 #include "Util.h"
@@ -310,6 +311,39 @@ bool Install(bool quiet, bool launch) {
     s.startWithWindows = true;
     s.Save();
 
+    // The extra monitor comes from Virtual Display Driver; install it if it is missing.
+    bool restartNeeded = driver::RestartPending();
+    if (!quiet && !driver::Present()) {
+        int choice = MessageBoxW(
+            nullptr,
+            L"FreeDisplay needs Virtual Display Driver to create the extra screen for your tablet. It is free "
+            L"and open source, and it is included with FreeDisplay.\n\n"
+            L"Windows will ask for permission to install it. Install it now?",
+            kAppName, MB_OKCANCEL | MB_ICONINFORMATION | MB_SETFOREGROUND);
+        if (choice == IDOK) {
+            if (driver::RunElevatedInstall()) {
+                restartNeeded = true;
+            } else {
+                Message(false,
+                        L"Virtual Display Driver was not installed. FreeDisplay will mirror your main screen "
+                        L"instead of extending it. Run this installer again to retry.",
+                        MB_ICONWARNING);
+            }
+        }
+    }
+
+    if (restartNeeded) {
+        // The new monitor is only safe to capture after a restart (see Driver.h).
+        if (!quiet &&
+            MessageBoxW(nullptr,
+                        L"Almost done: restart your PC to finish setting up the extra screen. FreeDisplay starts "
+                        L"by itself after the restart.\n\nRestart now?",
+                        kAppName, MB_YESNO | MB_ICONINFORMATION | MB_SETFOREGROUND) == IDYES &&
+            !driver::RestartWindows())
+            Message(false, L"Windows did not restart. Please restart it yourself.", MB_ICONWARNING);
+        return true;
+    }
+
     if (launch) RunHidden(L"\"" + exe + L"\"", 0, dir.c_str());
     Message(quiet,
             L"FreeDisplay is installed and running - look for its icon in the notification area.\n\n"
@@ -332,6 +366,15 @@ bool Uninstall(bool quiet) {
     }
     KillAdbServer(dir);
     KillAdbServer(KnownFolder(FOLDERID_LocalAppData) + L"\\FreeDisplay\\portable\\");
+
+    // Remove the driver only if FreeDisplay installed it, and ask, since other apps may
+    // use it. Done before deleting files: the elevated step runs from this executable.
+    if (!quiet && driver::InstalledByUs() &&
+        MessageBoxW(nullptr,
+                    L"Also remove Virtual Display Driver, which FreeDisplay installed?\n\n"
+                    L"Choose No if other apps (for example game streaming) use the virtual screen.",
+                    kAppName, MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND) == IDYES)
+        driver::RunElevatedUninstall();
 
     HKEY key;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {

@@ -18,17 +18,25 @@ and starts streaming. Wire format: [PROTOCOL.md](PROTOCOL.md).
 
 ## Install (Windows)
 
-1. Install [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver)
-   (this provides the extra monitor). In its `vdd_settings.xml`, pick the GPU
-   whose video encoder you want to use and add your tablet's resolution.
-2. Run `FreeDisplay.exe` (from `dist\` after building) and choose **Yes**.
-   It installs for your user only (no admin rights) into
-   `%LOCALAPPDATA%\Programs\FreeDisplay`. It also adds a Start menu shortcut and
-   an Apps & Features entry, and it starts with Windows. Choose **No** to run it once without installing.
+1. Run `FreeDisplay.exe` and choose **Yes**. It installs for your user into
+   `%LOCALAPPDATA%\Programs\FreeDisplay`, adds a Start menu shortcut and an
+   Apps & Features entry, and starts with Windows. Choose **No** to run it once
+   without installing.
+2. If [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver)
+   (which creates the extra screen) is missing, FreeDisplay offers to install
+   the copy it includes. Windows asks for administrator permission once, then
+   you restart the PC. Without the driver, FreeDisplay mirrors the main screen.
 3. FreeDisplay now runs in the notification area (tray).
 
-Silent options: `FreeDisplay.exe --install --quiet`, `FreeDisplay.exe --uninstall --quiet`.
-Uninstall normally from **Settings > Apps > Installed apps > FreeDisplay**.
+The included driver gets a settings file (`C:\VirtualDisplayDriver\vdd_settings.xml`)
+listing common tablet resolutions at 60-144 Hz. If your tablet's resolution is
+not listed, add it there and restart. A driver you installed yourself is used
+as it is.
+
+Silent options: `FreeDisplay.exe --install --quiet` (skips the driver),
+`FreeDisplay.exe --uninstall --quiet`. Uninstall normally from
+**Settings > Apps > Installed apps > FreeDisplay**; it offers to remove the
+driver too if FreeDisplay installed it.
 
 ## Set up the tablet (once)
 
@@ -123,5 +131,7 @@ with, any commercial second-screen app. It is provided as is, without warranty.
 - `FreeDisplay.exe` bundles `adb` from the Android SDK Platform-Tools (Apache
   License 2.0, part of the Android Open Source Project); its NOTICE.txt is
   installed next to it in `adb\`.
-- Virtual Display Driver is a separate project and is not included; install it
-  from its own site.
+- `host/third_party/vdd`: the unmodified, signed Virtual Display Driver package
+  (MttVDD 23.40.36.27) by VirtualDrivers / MikeTheTech, MIT license (see its
+  LICENSE.txt, also installed next to the driver). FreeDisplay installs it only
+  when no copy is present.

@@ -9,6 +9,9 @@ if not defined VSDIR (
   echo Visual Studio C++ build tools not found.
   exit /b 1
 )
+rem vcvars64 breaks on PATH entries with parentheses, e.g. "C:\Program Files (x86)\Nmap",
+rem and the build needs nothing else from PATH.
+set "PATH=%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\WindowsPowerShell\v1.0"
 call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1 || exit /b 1
 
 cd /d "%~dp0"

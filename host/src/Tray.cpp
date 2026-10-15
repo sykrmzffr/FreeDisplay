@@ -5,6 +5,7 @@
 #include "Resources.h"
 #include "Settings.h"
 #include "Util.h"
+#include <vector>
 
 namespace {
 constexpr UINT kTrayMsg = WM_APP + 1;    // icon clicks
@@ -24,6 +25,9 @@ enum MenuId : UINT {
     kIdAutostart,
     kIdMoveBack,
     kIdSettings,
+    kIdExtend,
+    kIdDuplicate,
+    kIdRestart,
     kIdLog,
     kIdQuit,
 };
@@ -43,6 +47,9 @@ enum ControlId : int {
     kCtlMoveBack,
     kCtlAutostart,
     kCtlLog,
+    kCtlModeLabel,
+    kCtlMode,
+    kCtlRestart,
 };
 
 constexpr int kQualityValues[] = {100, 75, 50};
@@ -50,6 +57,28 @@ constexpr const wchar_t* kQualityNames[] = {L"Sharp - full resolution", L"Balanc
                                             L"Fastest - 50%, lowest delay"};
 constexpr const wchar_t* kSaverNames[] = {L"When on battery - 60 Hz", L"Always - 60 Hz",
                                           L"Off - up to 120 Hz"};
+
+constexpr const wchar_t* kModeNames[] = {L"Extend - tablet is a second screen",
+                                         L"Duplicate - tablet mirrors this screen"};
+
+// Current projection mode as in Win+P: 0 extend, 1 duplicate, -1 other (e.g. one screen only).
+int CurrentMode() {
+    UINT32 paths = 0, modes = 0;
+    if (GetDisplayConfigBufferSizes(QDC_DATABASE_CURRENT, &paths, &modes) != ERROR_SUCCESS) return -1;
+    std::vector<DISPLAYCONFIG_PATH_INFO> p(paths);
+    std::vector<DISPLAYCONFIG_MODE_INFO> m(modes);
+    DISPLAYCONFIG_TOPOLOGY_ID topology{};
+    if (QueryDisplayConfig(QDC_DATABASE_CURRENT, &paths, p.data(), &modes, m.data(), &topology) != ERROR_SUCCESS)
+        return -1;
+    return topology == DISPLAYCONFIG_TOPOLOGY_EXTEND ? 0 : topology == DISPLAYCONFIG_TOPOLOGY_CLONE ? 1 : -1;
+}
+
+// Same as choosing Extend or Duplicate in Win+P; the stream follows on its own.
+void SetMode(int mode) {
+    LONG rc = SetDisplayConfig(0, nullptr, 0, nullptr,
+                               SDC_APPLY | (mode == 1 ? SDC_TOPOLOGY_CLONE : SDC_TOPOLOGY_EXTEND));
+    Log("Screen mode -> %s: %s", mode == 1 ? "duplicate" : "extend", rc == ERROR_SUCCESS ? "ok" : "failed");
+}
 
 void OpenLog() {
     ShellExecuteW(nullptr, L"open", (Settings::DataDir() + L"host.log").c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -177,6 +206,11 @@ void Tray::ShowMenu() {
     AppendMenuW(saver, MF_STRING | (s.batterySaver == Settings::kSaverOff ? MF_CHECKED : 0), kIdSaverOff,
                 L"&Off (up to 120 Hz)");
 
+    int mode = CurrentMode();
+    HMENU screen = CreatePopupMenu();
+    AppendMenuW(screen, MF_STRING | (mode == 0 ? MF_CHECKED : 0), kIdExtend, L"&Extend (second screen)");
+    AppendMenuW(screen, MF_STRING | (mode == 1 ? MF_CHECKED : 0), kIdDuplicate, L"&Duplicate (mirror)");
+
     HMENU menu = CreatePopupMenu();
     AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, status.c_str());
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -185,6 +219,7 @@ void Tray::ShowMenu() {
     AppendMenuW(menu, MF_STRING | (s.touch ? MF_CHECKED : 0), kIdTouch, L"&Touch input");
     AppendMenuW(menu, MF_STRING | (s.pen ? MF_CHECKED : 0), kIdPen, L"&Pen input");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(quality), L"&Video quality");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(screen), L"Screen m&ode");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(saver), L"&Battery saver");
     AppendMenuW(menu, MF_STRING | (s.moveWindowsBack ? MF_CHECKED : 0), kIdMoveBack,
                 L"&Move windows back when the tablet disconnects");
@@ -192,6 +227,7 @@ void Tray::ShowMenu() {
     AppendMenuW(menu, MF_STRING | (s.startWithWindows ? MF_CHECKED : 0), kIdAutostart, L"Start with &Windows");
     AppendMenuW(menu, MF_STRING, kIdLog, L"Open &log");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kIdRestart, L"&Restart FreeDisplay");
     AppendMenuW(menu, MF_STRING, kIdQuit, L"&Quit FreeDisplay");
 
     POINT pt;
@@ -215,6 +251,11 @@ void Tray::ShowMenu() {
         if (Settings::ApplyStartWithWindows(!s.startWithWindows)) s.startWithWindows = !s.startWithWindows;
         break;
     case kIdSettings: ShowSettings(); return;
+    case kIdExtend: SetMode(0); return;
+    case kIdDuplicate: SetMode(1); return;
+    case kIdRestart:
+        if (cb_.onRestart) cb_.onRestart();
+        return;
     case kIdLog: OpenLog(); return;
     case kIdQuit:
         if (cb_.onQuit) cb_.onQuit();
@@ -252,15 +293,20 @@ void Tray::ShowSettings() {
     add(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, kCtlQuality);
     add(L"STATIC", L"&Battery saver", SS_LEFT, kCtlSaverLabel);
     add(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, kCtlSaver);
+    add(L"STATIC", L"Screen m&ode", SS_LEFT, kCtlModeLabel);
+    add(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, kCtlMode);
     add(L"BUTTON", L"&Move windows back when the tablet disconnects", BS_AUTOCHECKBOX | WS_TABSTOP,
         kCtlMoveBack);
     add(L"BUTTON", L"Start with &Windows", BS_AUTOCHECKBOX | WS_TABSTOP, kCtlAutostart);
     add(L"BUTTON", L"Open &log", BS_PUSHBUTTON | WS_TABSTOP, kCtlLog);
+    add(L"BUTTON", L"&Restart app", BS_PUSHBUTTON | WS_TABSTOP, kCtlRestart);
     add(L"BUTTON", L"Close", BS_DEFPUSHBUTTON | WS_TABSTOP, IDCANCEL);
     for (const wchar_t* name : kQualityNames)
         SendDlgItemMessageW(settings_, kCtlQuality, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name));
     for (const wchar_t* name : kSaverNames)
         SendDlgItemMessageW(settings_, kCtlSaver, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name));
+    for (const wchar_t* name : kModeNames)
+        SendDlgItemMessageW(settings_, kCtlMode, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name));
 
     LayoutSettings();
     RefreshSettings();
@@ -311,10 +357,13 @@ void Tray::LayoutSettings() {
         {kCtlQuality, margin, 174, inner, 200},
         {kCtlSaverLabel, margin, 210, inner, 20},
         {kCtlSaver, margin, 232, inner, 200},
-        {kCtlMoveBack, margin, 272, inner, 22},
-        {kCtlAutostart, margin, 298, inner, 22},
-        {kCtlLog, margin, 340, 110, 30},
-        {IDCANCEL, width - margin - 110, 340, 110, 30},
+        {kCtlModeLabel, margin, 268, inner, 20},
+        {kCtlMode, margin, 290, inner, 200},
+        {kCtlMoveBack, margin, 330, inner, 22},
+        {kCtlAutostart, margin, 356, inner, 22},
+        {kCtlLog, margin, 398, 105, 30},
+        {kCtlRestart, margin + 117, 398, 106, 30},
+        {IDCANCEL, width - margin - 105, 398, 105, 30},
     };
     for (const Place& p : places) {
         HWND c = GetDlgItem(settings_, p.id);
@@ -322,7 +371,7 @@ void Tray::LayoutSettings() {
         SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(p.id == kCtlTitle ? titleFont_ : font_), TRUE);
     }
 
-    RECT rc{0, 0, px(width), px(388)};
+    RECT rc{0, 0, px(width), px(446)};
     AdjustWindowRectExForDpi(&rc, GetWindowLongW(settings_, GWL_STYLE), FALSE, 0, dpi);
     SetWindowPos(settings_, nullptr, 0, 0, rc.right - rc.left, rc.bottom - rc.top,
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
@@ -339,6 +388,7 @@ void Tray::RefreshSettings() {
         if (kQualityValues[i] == s.qualityPct) q = i;
     SendDlgItemMessageW(settings_, kCtlQuality, CB_SETCURSEL, q, 0);
     SendDlgItemMessageW(settings_, kCtlSaver, CB_SETCURSEL, s.batterySaver.load(), 0);
+    SendDlgItemMessageW(settings_, kCtlMode, CB_SETCURSEL, CurrentMode(), 0); // -1 selects nothing
 }
 
 void Tray::OnSettingsCommand(int id, int code) {
@@ -368,6 +418,15 @@ void Tray::OnSettingsCommand(int id, int code) {
         s.batterySaver = int(i);
         break;
     }
+    case kCtlMode: {
+        if (code != CBN_SELCHANGE) return;
+        LRESULT i = SendDlgItemMessageW(settings_, kCtlMode, CB_GETCURSEL, 0, 0);
+        if (i == 0 || i == 1) SetMode(int(i));
+        return;
+    }
+    case kCtlRestart:
+        if (cb_.onRestart) cb_.onRestart();
+        return;
     case kCtlLog: OpenLog(); return;
     case IDCANCEL: DestroyWindow(settings_); return;
     default: return;
@@ -431,6 +490,7 @@ LRESULT CALLBACK Tray::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         if (msg == WM_DISPLAYCHANGE) {
+            if (self->settings_) self->RefreshSettings(); // e.g. Win+P changed the screen mode
             if (self->cb_.onDisplayChanged) self->cb_.onDisplayChanged();
             return 0;
         }

@@ -634,6 +634,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
             setup = Setup::Uninstall;
         } else if (a == L"--quiet") {
             quiet = true;
+        } else if (a == L"--wait-for") { // restart: let the previous copy exit first
+            if (HANDLE old = OpenProcess(SYNCHRONIZE, FALSE, DWORD(next()))) {
+                WaitForSingleObject(old, 15000);
+                CloseHandle(old);
+            }
         } else if (a == L"--install-driver") { // run elevated by the installer
             return driver::Install();
         } else if (a == L"--uninstall-driver") {
@@ -715,6 +720,21 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     cb.onQualityChanged = [] { g_restart = true; };
     cb.onQuit = [] { g_quit = true; };
     cb.onDisplayChanged = [] { g_displayChangedAt = NowUs(); };
+    cb.onRestart = [] {
+        // The new copy waits for this one to exit (it needs the single-instance mutex).
+        wchar_t exe[MAX_PATH];
+        GetModuleFileNameW(nullptr, exe, MAX_PATH);
+        std::wstring cmd = L"\"" + std::wstring(exe) + L"\" --wait-for " + std::to_wstring(GetCurrentProcessId());
+        STARTUPINFOW si{sizeof si};
+        PROCESS_INFORMATION pi{};
+        if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+            Log("Restarting FreeDisplay");
+        }
+        g_quit = true;
+        PostQuitMessage(0);
+    };
     if (tray.Create(inst, cb)) g_tray = &tray;
     else Log("Notification-area icon unavailable");
 

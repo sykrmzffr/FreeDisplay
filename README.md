@@ -71,7 +71,10 @@ settings window; right-click it for the same options as a menu, plus **Quit**:
   tablet screen and the mouse pointer return to the main screen. The virtual
   monitor itself stays on: switching the driver off and on worked, but
   capturing it afterwards froze Windows in testing.
-- **Start with Windows**, **Open log**.
+- **Screen mode**: Extend (tablet is a second screen) or Duplicate (mirror),
+  the same as Win+P; the stream follows within a second or two, also when you
+  use Win+P.
+- **Start with Windows**, **Open log**, **Restart app**.
 
 `FreeDisplay.exe --move-windows-back` does the window move by hand.
 

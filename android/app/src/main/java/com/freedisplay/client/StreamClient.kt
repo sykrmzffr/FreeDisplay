@@ -19,6 +19,7 @@ class StreamClient(
     private val screenHeight: Int,
     private val dpi: Int,
     private val refreshHz: Int,
+    private val rotationDegrees: Int, // video rotation on screen, see MainActivity
     private val deviceName: String,
     private val listener: Listener,
 ) {
@@ -26,6 +27,7 @@ class StreamClient(
         fun onStatus(text: String)
         fun onVideoSize(width: Int, height: Int, fps: Int)
         fun onStreaming()
+        fun onOrientation(orientation: Int)
     }
 
     @Volatile private var running = false
@@ -97,12 +99,16 @@ class StreamClient(
             writeInt(screenHeight)
             writeInt(dpi)
             writeInt(refreshHz)
+            val (maxW, maxH) = VideoDecoder.maxSize()
+            writeInt(maxW)
+            writeInt(maxH)
             write(deviceName.toByteArray(Charsets.UTF_8))
         })
 
         val input = DataInputStream(BufferedInputStream(s.getInputStream(), 1 shl 20))
         val decoder = VideoDecoder(
             surface,
+            rotationDegrees,
             onStarted = { info ->
                 send(Protocol.message(Protocol.DECODER_INFO) { write(info.toByteArray(Charsets.UTF_8)) })
             },
@@ -122,6 +128,7 @@ class StreamClient(
                 val receivedNs = System.nanoTime()
                 when (type) {
                     Protocol.PING -> send(Protocol.message(Protocol.PONG) { write(buffer, 0, length) })
+                    Protocol.ORIENTATION -> if (length >= 1) listener.onOrientation(buffer[0].toInt())
                     Protocol.VIDEO_CONFIG -> {
                         val w = readInt(buffer, 0)
                         val h = readInt(buffer, 4)

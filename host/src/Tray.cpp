@@ -28,6 +28,9 @@ enum MenuId : UINT {
     kIdExtend,
     kIdDuplicate,
     kIdRestart,
+    kIdOrientAuto,
+    kIdOrientLandscape,
+    kIdOrientPortrait,
     kIdLog,
     kIdQuit,
 };
@@ -50,6 +53,8 @@ enum ControlId : int {
     kCtlModeLabel,
     kCtlMode,
     kCtlRestart,
+    kCtlOrientLabel,
+    kCtlOrient,
 };
 
 constexpr int kQualityValues[] = {100, 75, 50};
@@ -58,6 +63,8 @@ constexpr const wchar_t* kQualityNames[] = {L"Sharp - full resolution", L"Balanc
 constexpr const wchar_t* kSaverNames[] = {L"When on battery - 60 Hz", L"Always - 60 Hz",
                                           L"Off - up to 120 Hz"};
 
+constexpr const wchar_t* kOrientNames[] = {L"Auto - follow the tablet's rotation", L"Landscape",
+                                           L"Portrait"};
 constexpr const wchar_t* kModeNames[] = {L"Extend - tablet is a second screen",
                                          L"Duplicate - tablet mirrors this screen"};
 
@@ -178,13 +185,14 @@ void Tray::ApplyStatus() {
     if (settings_) SetDlgItemTextW(settings_, kCtlStatus, status.c_str());
 }
 
-void Tray::SettingsChanged(int oldQuality) {
+void Tray::SettingsChanged(int oldQuality, int oldOrientation) {
     Settings& s = AppSettings();
     s.Save();
     Log("Settings: touch=%d pen=%d quality=%d%% batterySaver=%d startWithWindows=%d moveWindowsBack=%d",
         int(s.touch), int(s.pen), int(s.qualityPct), int(s.batterySaver), int(s.startWithWindows),
         int(s.moveWindowsBack));
-    if (s.qualityPct != oldQuality && cb_.onQualityChanged) cb_.onQualityChanged();
+    if ((s.qualityPct != oldQuality || s.orientation != oldOrientation) && cb_.onQualityChanged)
+        cb_.onQualityChanged();
     // Battery saver changes are picked up by the stream itself (it restarts at the new rate).
     if (settings_) RefreshSettings();
 }
@@ -211,6 +219,11 @@ void Tray::ShowMenu() {
     AppendMenuW(screen, MF_STRING | (mode == 0 ? MF_CHECKED : 0), kIdExtend, L"&Extend (second screen)");
     AppendMenuW(screen, MF_STRING | (mode == 1 ? MF_CHECKED : 0), kIdDuplicate, L"&Duplicate (mirror)");
 
+    HMENU orient = CreatePopupMenu();
+    AppendMenuW(orient, MF_STRING | (s.orientation == 0 ? MF_CHECKED : 0), kIdOrientAuto, L"&Auto (follow the tablet)");
+    AppendMenuW(orient, MF_STRING | (s.orientation == 1 ? MF_CHECKED : 0), kIdOrientLandscape, L"&Landscape");
+    AppendMenuW(orient, MF_STRING | (s.orientation == 2 ? MF_CHECKED : 0), kIdOrientPortrait, L"&Portrait");
+
     HMENU menu = CreatePopupMenu();
     AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, status.c_str());
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -220,6 +233,7 @@ void Tray::ShowMenu() {
     AppendMenuW(menu, MF_STRING | (s.pen ? MF_CHECKED : 0), kIdPen, L"&Pen input");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(quality), L"&Video quality");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(screen), L"Screen m&ode");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(orient), L"&Orientation");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(saver), L"&Battery saver");
     AppendMenuW(menu, MF_STRING | (s.moveWindowsBack ? MF_CHECKED : 0), kIdMoveBack,
                 L"&Move windows back when the tablet disconnects");
@@ -236,8 +250,11 @@ void Tray::ShowMenu() {
     UINT cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, pt.x, pt.y, 0, hwnd_, nullptr);
     DestroyMenu(menu); // also destroys the submenus
 
-    int oldQuality = s.qualityPct;
+    int oldQuality = s.qualityPct, oldOrientation = s.orientation;
     switch (cmd) {
+    case kIdOrientAuto: s.orientation = 0; break;
+    case kIdOrientLandscape: s.orientation = 1; break;
+    case kIdOrientPortrait: s.orientation = 2; break;
     case kIdTouch: s.touch = !s.touch; break;
     case kIdPen: s.pen = !s.pen; break;
     case kIdSharp: s.qualityPct = 100; break;
@@ -264,7 +281,7 @@ void Tray::ShowMenu() {
     default:
         return;
     }
-    SettingsChanged(oldQuality);
+    SettingsChanged(oldQuality, oldOrientation);
 }
 
 // ---- settings window ------------------------------------------------------
@@ -295,6 +312,8 @@ void Tray::ShowSettings() {
     add(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, kCtlSaver);
     add(L"STATIC", L"Screen m&ode", SS_LEFT, kCtlModeLabel);
     add(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, kCtlMode);
+    add(L"STATIC", L"Tablet o&rientation", SS_LEFT, kCtlOrientLabel);
+    add(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, kCtlOrient);
     add(L"BUTTON", L"&Move windows back when the tablet disconnects", BS_AUTOCHECKBOX | WS_TABSTOP,
         kCtlMoveBack);
     add(L"BUTTON", L"Start with &Windows", BS_AUTOCHECKBOX | WS_TABSTOP, kCtlAutostart);
@@ -305,6 +324,8 @@ void Tray::ShowSettings() {
         SendDlgItemMessageW(settings_, kCtlQuality, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name));
     for (const wchar_t* name : kSaverNames)
         SendDlgItemMessageW(settings_, kCtlSaver, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name));
+    for (const wchar_t* name : kOrientNames)
+        SendDlgItemMessageW(settings_, kCtlOrient, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name));
     for (const wchar_t* name : kModeNames)
         SendDlgItemMessageW(settings_, kCtlMode, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name));
 
@@ -359,11 +380,13 @@ void Tray::LayoutSettings() {
         {kCtlSaver, margin, 232, inner, 200},
         {kCtlModeLabel, margin, 268, inner, 20},
         {kCtlMode, margin, 290, inner, 200},
-        {kCtlMoveBack, margin, 330, inner, 22},
-        {kCtlAutostart, margin, 356, inner, 22},
-        {kCtlLog, margin, 398, 105, 30},
-        {kCtlRestart, margin + 117, 398, 106, 30},
-        {IDCANCEL, width - margin - 105, 398, 105, 30},
+        {kCtlOrientLabel, margin, 326, inner, 20},
+        {kCtlOrient, margin, 348, inner, 200},
+        {kCtlMoveBack, margin, 388, inner, 22},
+        {kCtlAutostart, margin, 414, inner, 22},
+        {kCtlLog, margin, 456, 105, 30},
+        {kCtlRestart, margin + 117, 456, 106, 30},
+        {IDCANCEL, width - margin - 105, 456, 105, 30},
     };
     for (const Place& p : places) {
         HWND c = GetDlgItem(settings_, p.id);
@@ -371,7 +394,7 @@ void Tray::LayoutSettings() {
         SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(p.id == kCtlTitle ? titleFont_ : font_), TRUE);
     }
 
-    RECT rc{0, 0, px(width), px(446)};
+    RECT rc{0, 0, px(width), px(504)};
     AdjustWindowRectExForDpi(&rc, GetWindowLongW(settings_, GWL_STYLE), FALSE, 0, dpi);
     SetWindowPos(settings_, nullptr, 0, 0, rc.right - rc.left, rc.bottom - rc.top,
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
@@ -389,11 +412,12 @@ void Tray::RefreshSettings() {
     SendDlgItemMessageW(settings_, kCtlQuality, CB_SETCURSEL, q, 0);
     SendDlgItemMessageW(settings_, kCtlSaver, CB_SETCURSEL, s.batterySaver.load(), 0);
     SendDlgItemMessageW(settings_, kCtlMode, CB_SETCURSEL, CurrentMode(), 0); // -1 selects nothing
+    SendDlgItemMessageW(settings_, kCtlOrient, CB_SETCURSEL, s.orientation.load(), 0);
 }
 
 void Tray::OnSettingsCommand(int id, int code) {
     Settings& s = AppSettings();
-    int oldQuality = s.qualityPct;
+    int oldQuality = s.qualityPct, oldOrientation = s.orientation;
     auto checked = [&](int ctl) { return IsDlgButtonChecked(settings_, ctl) == BST_CHECKED; };
     switch (id) {
     case kCtlTouch: s.touch = checked(kCtlTouch); break;
@@ -427,11 +451,18 @@ void Tray::OnSettingsCommand(int id, int code) {
     case kCtlRestart:
         if (cb_.onRestart) cb_.onRestart();
         return;
+    case kCtlOrient: {
+        if (code != CBN_SELCHANGE) return;
+        LRESULT i = SendDlgItemMessageW(settings_, kCtlOrient, CB_GETCURSEL, 0, 0);
+        if (i < 0 || i > 2) return;
+        s.orientation = int(i);
+        break;
+    }
     case kCtlLog: OpenLog(); return;
     case IDCANCEL: DestroyWindow(settings_); return;
     default: return;
     }
-    SettingsChanged(oldQuality);
+    SettingsChanged(oldQuality, oldOrientation);
 }
 
 LRESULT CALLBACK Tray::SettingsProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {

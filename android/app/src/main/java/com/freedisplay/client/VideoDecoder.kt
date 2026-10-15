@@ -14,6 +14,7 @@ import android.view.Surface
  */
 class VideoDecoder(
     private val surface: Surface,
+    private val rotationDegrees: Int, // clockwise, applied on screen (0, 90 or 270)
     private val onStarted: (String) -> Unit,
     private val onDecoded: (ptsUs: Long, decodeUs: Int, inputWaitUs: Int) -> Unit,
 ) {
@@ -62,6 +63,7 @@ class VideoDecoder(
             setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, width * height)
             setInteger(MediaFormat.KEY_PRIORITY, 0)
             setInteger(MediaFormat.KEY_OPERATING_RATE, Short.MAX_VALUE.toInt())
+            if (rotationDegrees != 0) setInteger(MediaFormat.KEY_ROTATION, rotationDegrees)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
             // Vendor switches that stop Qualcomm/MediaTek decoders from holding frames back.
             setInteger("vendor.qti-ext-dec-low-latency.enable", 1)
@@ -167,6 +169,22 @@ class VideoDecoder(
 
     companion object {
         private const val TAG = "FreeDisplay"
+
+        /**
+         * Largest picture (width, height) the AVC decoder we would use accepts, so the
+         * host can size the stream to fit (some decoders stop at 4096x2176, which a
+         * portrait stream can exceed). Prefers the low-latency variants, like createConfigured.
+         */
+        fun maxSize(): Pair<Int, Int> {
+            val avc = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter { info ->
+                !info.isEncoder && !info.name.contains("secure", ignoreCase = true) &&
+                    info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_AVC, ignoreCase = true) }
+            }
+            val best = avc.firstOrNull { it.name.contains("low_latency", ignoreCase = true) } ?: avc.firstOrNull()
+            val caps = best?.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)?.videoCapabilities
+                ?: return Pair(1920, 1920)
+            return Pair(caps.supportedWidths.upper, caps.supportedHeights.upper)
+        }
 
         /** Copies SPS (type 7) and PPS (type 8) NAL units, with start codes, out of an Annex-B frame. */
         fun extractParameterSets(data: ByteArray, offset: Int, length: Int): ByteArray? {

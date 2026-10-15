@@ -2,8 +2,8 @@
 // Resource IDs shared by FreeDisplay.rc and the code. Keep the version in sync
 // with VERSIONINFO in res/FreeDisplay.rc and versionName in the Android app.
 
-#define FD_VERSION_STR "1.2.0"
-#define FD_VERSION_WSTR L"1.2.0"
+#define FD_VERSION_STR "1.3.0"
+#define FD_VERSION_WSTR L"1.3.0"
 
 #define IDI_APP 1
 

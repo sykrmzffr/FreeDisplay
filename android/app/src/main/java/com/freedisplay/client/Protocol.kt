@@ -7,7 +7,7 @@ import java.io.DataOutputStream
 object Protocol {
     const val PORT = 27184
     const val MAGIC = 0x46445350 // "FDSP"
-    const val VERSION = 2
+    const val VERSION = 3
 
     const val HELLO = 1
     const val VIDEO_CONFIG = 2
@@ -18,6 +18,11 @@ object Protocol {
     const val DECODER_INFO = 8
     const val PING = 9
     const val PONG = 10
+    const val ORIENTATION = 11
+
+    const val ORIENT_AUTO = 0
+    const val ORIENT_LANDSCAPE = 1
+    const val ORIENT_PORTRAIT = 2
 
     const val ACT_DOWN = 0
     const val ACT_MOVE = 1

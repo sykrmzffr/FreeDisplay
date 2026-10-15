@@ -22,18 +22,23 @@ constexpr const wchar_t* kOurKey = L"SOFTWARE\\FreeDisplay";
 constexpr int kErrNoPayload = 0x20000001;
 constexpr int kErrNotOurs = 0x20000002;
 
-// Resolutions offered by the virtual monitor, each at every global refresh rate
-// plus its own. This driver version can only report a limited number of modes:
-// with 24 resolutions x 5 rates (~120 modes) it logged "Input buffer is too small
-// for target modes" and created no monitor at all; ~49 modes worked. Keep
-// kResolutions x (kRefreshRates + 1) well below that. The host scales the picture
-// to the tablet, so a close match is enough.
+// Resolutions offered by the virtual monitor, in landscape and portrait, each at
+// every global refresh rate plus its own. This driver version can only report a
+// limited number of modes: with 24 resolutions x 5 rates (~120 modes) it logged
+// "Input buffer is too small for target modes" and created no monitor at all;
+// ~49 modes worked. The host picks the closest one for each tablet and scales the
+// picture, so a close match is enough.
 constexpr int kResolutions[][2] = {
-    {1920, 1080}, {1920, 1200}, {2000, 1200}, {2048, 1536}, {2560, 1600},
-    {2800, 1752}, {2880, 1800}, {2960, 1848}, {3000, 2000}, {3200, 2136},
+    {1920, 1080}, {1920, 1200}, {2000, 1200}, {2048, 1536},
+    {2560, 1600}, {2880, 1800}, {2960, 1848}, {3200, 2136},
 };
-constexpr int kRefreshRates[] = {60, 90, 120};
-static_assert(std::size(kResolutions) * (std::size(kRefreshRates) + 1) <= 40, "too many display modes for VDD");
+constexpr int kRefreshRates[] = {60, 120};
+static_assert(std::size(kResolutions) * 2 * (std::size(kRefreshRates) + 1) <= 48, "too many display modes for VDD");
+
+// Identifies settings files FreeDisplay wrote; bump when the content changes so
+// installs with an older file get the new one.
+constexpr const char* kSettingsMarker = "Written by FreeDisplay";
+constexpr const char* kSettingsVersion = "settings v2 (landscape + portrait)";
 
 // Name of the GPU driving the primary display. VDD renders on it, which avoids
 // copies between GPUs on hybrid laptops; left to "default" it picked the
@@ -100,8 +105,8 @@ bool WriteText(const std::wstring& path, const std::string& text) {
 std::string DefaultSettingsXml() {
     std::string xml =
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n"
-        "<!-- Written by FreeDisplay. Virtual Display Driver settings; see\r\n"
-        "     https://github.com/VirtualDrivers/Virtual-Display-Driver -->\r\n"
+        "<!-- " + std::string(kSettingsMarker) + ", " + kSettingsVersion + ". Virtual Display Driver settings;\r\n"
+        "     see https://github.com/VirtualDrivers/Virtual-Display-Driver -->\r\n"
         "<vdd_settings>\r\n"
         "    <monitors>\r\n        <count>1</count>\r\n    </monitors>\r\n"
         "    <gpu>\r\n        <friendlyname>" + XmlEscape(PrimaryGpuName()) + "</friendlyname>\r\n    </gpu>\r\n"
@@ -110,9 +115,12 @@ std::string DefaultSettingsXml() {
     xml +=
         "    </global>\r\n"
         "    <resolutions>\r\n";
-    for (const auto& r : kResolutions) {
-        xml += "        <resolution><width>" + std::to_string(r[0]) + "</width><height>" + std::to_string(r[1]) +
-               "</height><refresh_rate>60</refresh_rate></resolution>\r\n";
+    for (int portrait = 0; portrait < 2; portrait++) {
+        for (const auto& r : kResolutions) {
+            int w = portrait ? r[1] : r[0], h = portrait ? r[0] : r[1];
+            xml += "        <resolution><width>" + std::to_string(w) + "</width><height>" + std::to_string(h) +
+                   "</height><refresh_rate>60</refresh_rate></resolution>\r\n";
+        }
     }
     xml +=
         "    </resolutions>\r\n"
@@ -130,15 +138,23 @@ std::string DefaultSettingsXml() {
     return xml;
 }
 
-// True when a settings file exists that FreeDisplay did not write.
-bool HasOwnSettings(const std::wstring& path) {
+// Start of the settings file, or empty when there is none.
+std::string ReadHead(const std::wstring& path) {
     HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-    if (f == INVALID_HANDLE_VALUE) return false;
+    if (f == INVALID_HANDLE_VALUE) return {};
     char head[512] = {};
     DWORD got = 0;
     ReadFile(f, head, sizeof head - 1, &got, nullptr);
     CloseHandle(f);
-    return strstr(head, "Written by FreeDisplay") == nullptr;
+    return head;
+}
+
+std::wstring SettingsPath() { return InstallDir() + L"\\vdd_settings.xml"; }
+
+// True when a settings file exists that FreeDisplay did not write (never replaced).
+bool HasOwnSettings(const std::wstring& path) {
+    std::string head = ReadHead(path);
+    return !head.empty() && head.find(kSettingsMarker) == std::string::npos;
 }
 
 ULONGLONG NowFiletime() {
@@ -301,6 +317,20 @@ int Install() {
     }
     return 0;
 }
+
+bool SettingsOutdated() {
+    std::wstring path = SettingsPath();
+    if (HasOwnSettings(path)) return false;
+    return ReadHead(path).find(kSettingsVersion) == std::string::npos;
+}
+
+int UpdateSettings() {
+    std::wstring path = SettingsPath();
+    if (HasOwnSettings(path)) return 0;
+    return WriteText(path, DefaultSettingsXml()) ? 0 : int(GetLastError() ? GetLastError() : 1);
+}
+
+bool RunElevatedUpdateSettings() { return RunSelfElevated(L"--update-driver-settings", nullptr); }
 
 int Uninstall() {
     if (!InstalledByUs()) return kErrNotOurs; // never remove a driver someone else installed

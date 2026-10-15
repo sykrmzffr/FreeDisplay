@@ -31,7 +31,7 @@ namespace {
 
 constexpr const wchar_t* kPackage = L"com.freedisplay.client";
 constexpr const wchar_t* kActivity = L"com.freedisplay.client/.MainActivity";
-constexpr int kAppVersionCode = 10; // keep in sync with android/app/build.gradle.kts
+constexpr int kAppVersionCode = 11; // keep in sync with android/app/build.gradle.kts
 
 struct Options {
     int display = -1;     // -1: auto (VDD monitor, else primary)
@@ -215,12 +215,30 @@ void RunSession(SOCKET sock, const Options& opt) {
     uint16_t version = hello.u16();
     uint32_t tabW = hello.u32(), tabH = hello.u32(), dpi = hello.u32();
     uint32_t tabHz = hello.u32();
+    uint32_t maxDecW = hello.u32(), maxDecH = hello.u32();
     std::string name = hello.rest();
     if (magic != proto::kMagic || version != proto::kVersion) {
         Log("Protocol mismatch (magic %08X version %u)", magic, version);
         return;
     }
-    Log("Tablet: %s, %ux%u @ %u dpi, up to %u Hz", name.c_str(), tabW, tabH, dpi, tabHz);
+    Log("Tablet: %s, %ux%u @ %u dpi, up to %u Hz, decodes up to %ux%u", name.c_str(), tabW, tabH, dpi, tabHz,
+        maxDecW, maxDecH);
+
+    // Orientation setting: the tablet rotates (and reconnects) if it does not match.
+    // Skip a few sessions while it turns, but never wait for it forever.
+    static int wrongWayCount = 0;
+    const int orient = AppSettings().orientation;
+    proto::Writer ow;
+    ow.u8(uint8_t(orient));
+    if (!SendMsg(sock, proto::kOrientation, ow.buf)) return;
+    bool tabletPortrait = tabH > tabW;
+    if (orient != proto::kOrientAuto && tabletPortrait != (orient == proto::kOrientPortrait) && wrongWayCount < 3) {
+        wrongWayCount++;
+        Log("Waiting for the tablet to turn %s", orient == proto::kOrientPortrait ? "portrait" : "landscape");
+        Sleep(1500); // the tablet closes this connection when it rotates
+        return;
+    }
+    wrongWayCount = 0;
 
     OutputInfo output;
     if (!ChooseOutput(opt.display, output)) {
@@ -247,11 +265,23 @@ void RunSession(SOCKET sock, const Options& opt) {
     // the refresh rate is only ever switched here, before capture starts.
     const bool saver = AppSettings().SaverActive();
     if (saver) fps = std::min(fps, 60u);
-    if (isVdd) VirtualMonitor::SetRefreshRate(output.gdiName, fps);
+    // Shape the virtual monitor like the tablet (portrait or landscape, closest
+    // resolution) at the stream rate. Only here, before capture starts.
+    if (isVdd && VirtualMonitor::MatchTablet(output.gdiName, tabW, tabH, fps)) {
+        Sleep(300);
+        OutputInfo changed;
+        if (ChooseOutput(opt.display, changed)) output = changed;
+    }
 
     int scalePct = opt.scalePct > 0 ? opt.scalePct : AppSettings().qualityPct.load();
     UINT w = UINT((output.desktop.right - output.desktop.left) * scalePct / 100) & ~1u;
     UINT h = UINT((output.desktop.bottom - output.desktop.top) * scalePct / 100) & ~1u;
+    // Stay within what the tablet's decoder accepts (some stop at 4096x2176).
+    if (maxDecW && maxDecH && (w > maxDecW || h > maxDecH)) {
+        double f = std::min(double(maxDecW) / w, double(maxDecH) / h);
+        w = UINT(w * f) & ~1u;
+        h = UINT(h * f) & ~1u;
+    }
     UINT bitrate = opt.bitrateMbps ? opt.bitrateMbps * 1000000 : AutoBitrate(w, h, std::min(fps, 60u));
 
     Capture cap;
@@ -643,6 +673,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
             return driver::Install();
         } else if (a == L"--uninstall-driver") {
             return driver::Uninstall();
+        } else if (a == L"--update-driver-settings") {
+            return driver::UpdateSettings();
         } else if (a == L"--move-windows-back") {
             if (!stdoutRedirected) AttachParentConsole();
             printf("Moved %d window(s) to the main screen\n", VirtualMonitor::MoveWindowsToPrimary());

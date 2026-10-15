@@ -53,6 +53,8 @@ void Settings::Load() {
     moveWindowsBack = ReadBool(L"MoveWindowsBack", true);
     int saver = GetPrivateProfileIntW(kSection, L"BatterySaver", kSaverOnBattery, IniPath().c_str());
     batterySaver = (saver >= kSaverOnBattery && saver <= kSaverOff) ? saver : kSaverOnBattery;
+    int orient = GetPrivateProfileIntW(kSection, L"Orientation", 0, IniPath().c_str());
+    orientation = (orient >= 0 && orient <= 2) ? orient : 0;
 }
 
 void Settings::Save() const {
@@ -62,6 +64,7 @@ void Settings::Save() const {
     WriteInt(L"StartWithWindows", startWithWindows ? 1 : 0);
     WriteInt(L"MoveWindowsBack", moveWindowsBack ? 1 : 0);
     WriteInt(L"BatterySaver", batterySaver);
+    WriteInt(L"Orientation", orientation);
 }
 
 bool Settings::ApplyStartWithWindows(bool enable) {

@@ -332,6 +332,19 @@ bool Install(bool quiet, bool launch) {
         }
     }
 
+    // An older FreeDisplay wrote driver settings without portrait resolutions.
+    bool settingsUpdated = false;
+    if (driver::Present() && driver::SettingsOutdated()) {
+        settingsUpdated = driver::UpdateSettings() == 0 || (!quiet && driver::RunElevatedUpdateSettings());
+        Log("Driver settings update: %s", settingsUpdated ? "done" : "failed");
+    }
+    if (settingsUpdated && !restartNeeded && !quiet) {
+        Message(false,
+                L"FreeDisplay updated the extra screen's settings (portrait mode). They take effect after "
+                L"your next restart; until then the tablet works in landscape as before.",
+                MB_ICONINFORMATION);
+    }
+
     if (restartNeeded) {
         // The new monitor is only safe to capture after a restart (see Driver.h).
         if (!quiet &&

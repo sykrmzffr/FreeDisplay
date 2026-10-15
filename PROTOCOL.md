@@ -20,12 +20,23 @@ All integers are big-endian. Floats are IEEE-754 32-bit, big-endian.
 | Field    | Type     |
 |----------|----------|
 | magic    | u32 `0x46445350` ("FDSP") |
-| version  | u16 (2)  |
-| width    | u32 physical screen pixels (landscape) |
+| version  | u16 (3)  |
+| width    | u32 physical screen pixels in the current orientation |
 | height   | u32      |
 | dpi      | u32      |
 | refreshHz| u32 display refresh rate the app selected |
+| maxDecodeWidth  | u32 largest picture width the tablet's AVC decoder accepts |
+| maxDecodeHeight | u32 largest picture height |
 | name     | UTF-8, rest of payload |
+
+The tablet reconnects (sending a new HELLO) when it is rotated.
+
+### 11 ORIENTATION
+Host to tablet, sent at the start of each session.
+
+| Field | Type |
+|-------|------|
+| orientation | u8: 0 follow the tablet (auto-rotate), 1 landscape, 2 portrait |
 
 ### 4 INPUT
 One Android MotionEvent.

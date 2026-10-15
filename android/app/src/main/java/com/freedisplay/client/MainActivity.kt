@@ -1,11 +1,13 @@
 package com.freedisplay.client
 
 import android.app.Activity
+import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.OrientationEventListener
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
@@ -16,12 +18,12 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import kotlin.math.atan
 import kotlin.math.cos
-import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.tan
 
 private const val TARGET_HZ = 120f
+private const val PREF_ORIENTATION = "orientation"
 
 class MainActivity : Activity(), SurfaceHolder.Callback, StreamClient.Listener {
     private lateinit var root: FrameLayout
@@ -30,6 +32,16 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamClient.Listener {
     private var client: StreamClient? = null
     private var videoW = 0
     private var videoH = 0
+    private var clientPortrait = false // orientation the running client reported to the host
+    private var clientRotation = 0     // in-app video rotation the running client uses
+
+    // Orientation setting from the host. Android 16 lets large screens ignore an app's
+    // orientation request, so when the screen is the other way round, the app turns
+    // the picture itself (decoder rotation) and maps input back.
+    private var orientationPref = Protocol.ORIENT_AUTO
+    private var rotation = 0                  // 0, 90 or 270 degrees clockwise
+    private var heldRotation = 90             // which way the user holds the tablet, from the sensor
+    private var orientationListener: OrientationEventListener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,6 +66,25 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamClient.Listener {
         setContentView(root)
 
         refreshRate = requestRefreshRate(TARGET_HZ)
+        applyOrientation(getPreferences(MODE_PRIVATE).getInt(PREF_ORIENTATION, Protocol.ORIENT_AUTO))
+        orientationListener = object : OrientationEventListener(this) {
+            override fun onOrientationChanged(degrees: Int) {
+                if (degrees == ORIENTATION_UNKNOWN) return // lying flat: keep the last choice
+                // The rotation the system would use for how the tablet is held, versus the
+                // one it uses; the difference is what the picture needs (clockwise).
+                val held = ((degrees + 45) / 90 % 4) * 90
+                val wanted = (360 - held) % 360
+                val actual = displayRotationDegrees()
+                val extra = (wanted - actual + 360) % 360
+                if ((extra == 90 || extra == 270) && extra != heldRotation) {
+                    heldRotation = extra
+                    // Flip the picture to the new side once the tablet settles (a turn with
+                    // auto-rotate on is handled by surfaceChanged instead).
+                    surfaceView.removeCallbacks(rotationCheck)
+                    surfaceView.postDelayed(rotationCheck, 700)
+                }
+            }
+        }.also { if (it.canDetectOrientation()) it.enable() }
         surfaceView.holder.addCallback(this)
         surfaceView.setOnTouchListener { _, e -> sendMotion(e); true }
         surfaceView.setOnGenericMotionListener { _, e -> sendMotion(e); true }
@@ -81,16 +112,51 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamClient.Listener {
 
     // ---- surface lifecycle drives the connection ----
 
-    override fun surfaceCreated(holder: SurfaceHolder) {
-        val (w, h) = screenSize()
+    override fun surfaceCreated(holder: SurfaceHolder) = startClient(holder)
+
+    /** Connects with the screen size of the current orientation. */
+    private fun startClient(holder: SurfaceHolder) {
+        val (w, h) = logicalSize()
         val hz = refreshRate
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             holder.surface.setFrameRate(hz.toFloat(), android.view.Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE)
         }
+        clientPortrait = h > w
+        clientRotation = rotation
         client = StreamClient(
-            holder.surface, w, h, resources.displayMetrics.densityDpi, hz,
+            holder.surface, w, h, resources.displayMetrics.densityDpi, hz, rotation,
             "${Build.MANUFACTURER} ${Build.MODEL}", this,
         ).also { it.start() }
+    }
+
+    private val rotationCheck = Runnable {
+        val (w, h) = logicalSize()
+        if ((h > w) != clientPortrait || rotation != clientRotation) restartClient()
+    }
+
+    private fun restartClient() {
+        val holder = surfaceView.holder
+        if (client == null || !holder.surface.isValid) return
+        client?.stop()
+        startClient(holder)
+    }
+
+    /**
+     * Screen size as the host should see it: the real one, or swapped when the
+     * orientation setting wants the other shape (then [rotation] turns the picture).
+     */
+    private fun logicalSize(): Pair<Int, Int> {
+        val (w, h) = screenSize()
+        val wantPortrait = orientationPref == Protocol.ORIENT_PORTRAIT
+        val mismatch = orientationPref != Protocol.ORIENT_AUTO && (h > w) != wantPortrait
+        rotation = if (mismatch) heldRotation else 0
+        return if (mismatch) Pair(h, w) else Pair(w, h)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun displayRotationDegrees(): Int {
+        val d = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display else windowManager.defaultDisplay
+        return (d?.rotation ?: 0) * 90
     }
 
     /** Highest refresh rate we can run at (reported to the host in the hello). */
@@ -113,7 +179,24 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamClient.Listener {
         return Math.round(best.refreshRate)
     }
 
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+        // Rotated: reconnect so the host switches the virtual monitor to the new shape.
+        val (w, h) = logicalSize()
+        if (client != null && ((h > w) != clientPortrait || rotation != clientRotation)) {
+            client?.stop()
+            startClient(holder)
+        }
+    }
+
+    /** Applies the host's orientation setting (also remembered for the next start). */
+    private fun applyOrientation(orientation: Int) {
+        orientationPref = orientation
+        requestedOrientation = when (orientation) {
+            Protocol.ORIENT_LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
+            Protocol.ORIENT_PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
+            else -> ActivityInfo.SCREEN_ORIENTATION_FULL_USER // follows auto-rotate and the rotation lock
+        }
+    }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         client?.stop()
@@ -132,7 +215,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamClient.Listener {
             windowManager.defaultDisplay.getRealMetrics(m)
             w = m.widthPixels; h = m.heightPixels
         }
-        return Pair(max(w, h), min(w, h)) // always report landscape
+        return Pair(w, h)
     }
 
     // ---- StreamClient.Listener (called from the network thread) ----
@@ -158,13 +241,30 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamClient.Listener {
 
     override fun onStreaming() = runOnUiThread { status.visibility = View.GONE }
 
+    override fun onOrientation(orientation: Int) = runOnUiThread {
+        getPreferences(MODE_PRIVATE).edit().putInt(PREF_ORIENTATION, orientation).apply()
+        if (orientation != orientationPref) {
+            applyOrientation(orientation)
+            // If the system ignores the request, turn the picture in the app instead.
+            val (w, h) = logicalSize()
+            if ((h > w) != clientPortrait || rotation != clientRotation) restartClient()
+        }
+    }
+
+    override fun onDestroy() {
+        orientationListener?.disable()
+        super.onDestroy()
+    }
+
     /** Letterboxes the SurfaceView to the video's aspect ratio so input maps 1:1. */
     private fun fitVideo() {
         if (videoW == 0 || root.width == 0) return
-        val scale = min(root.width / videoW.toFloat(), root.height / videoH.toFloat())
+        val shownW = if (clientRotation == 0) videoW else videoH // the decoder turns the picture
+        val shownH = if (clientRotation == 0) videoH else videoW
+        val scale = min(root.width / shownW.toFloat(), root.height / shownH.toFloat())
         val lp = surfaceView.layoutParams as FrameLayout.LayoutParams
-        val w = (videoW * scale).toInt()
-        val h = (videoH * scale).toInt()
+        val w = (shownW * scale).toInt()
+        val h = (shownH * scale).toInt()
         if (lp.width != w || lp.height != h) {
             lp.width = w
             lp.height = h
@@ -217,13 +317,27 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamClient.Listener {
                 }
                 // Android gives tilt from vertical plus a direction; Windows wants X/Y tilt.
                 val t = tan(tilt.coerceIn(0f, 1.5f))
-                val tiltX = Math.toDegrees(atan(t * sin(orient)).toDouble()).toFloat()
-                val tiltY = Math.toDegrees(atan(-t * cos(orient)).toDouble()).toFloat()
+                val shownTiltX = Math.toDegrees(atan(t * sin(orient)).toDouble()).toFloat()
+                val shownTiltY = Math.toDegrees(atan(-t * cos(orient)).toDouble()).toFloat()
+
+                // Map from the shown picture back to the video (undo the in-app rotation).
+                val dx = (x / w).coerceIn(0f, 1f)
+                val dy = (y / h).coerceIn(0f, 1f)
+                val (vx, vy) = when (clientRotation) {
+                    90 -> Pair(dy, 1f - dx)
+                    270 -> Pair(1f - dy, dx)
+                    else -> Pair(dx, dy)
+                }
+                val (tiltX, tiltY) = when (clientRotation) {
+                    90 -> Pair(shownTiltY, -shownTiltX)
+                    270 -> Pair(-shownTiltY, shownTiltX)
+                    else -> Pair(shownTiltX, shownTiltY)
+                }
 
                 writeInt(e.getPointerId(i))
                 writeByte(tool)
-                writeFloat((x / w).coerceIn(0f, 1f))
-                writeFloat((y / h).coerceIn(0f, 1f))
+                writeFloat(vx)
+                writeFloat(vy)
                 writeFloat(pressure.coerceIn(0f, 1f))
                 writeFloat(tiltX)
                 writeFloat(tiltY)

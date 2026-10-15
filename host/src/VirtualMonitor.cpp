@@ -1,6 +1,8 @@
 #include "VirtualMonitor.h"
 #include <dwmapi.h>
 #include <algorithm>
+#include <climits>
+#include <cmath>
 #include <vector>
 #include "Util.h"
 
@@ -90,15 +92,53 @@ bool IsAttached() {
     return FindDevice(dd) && (dd.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP);
 }
 
-void SetRefreshRate(const std::wstring& gdiName, UINT hz) {
+bool MatchTablet(const std::wstring& gdiName, UINT tabletW, UINT tabletH, UINT hz) {
+    DEVMODEW cur{};
+    cur.dmSize = sizeof cur;
+    if (!EnumDisplaySettingsW(gdiName.c_str(), ENUM_CURRENT_SETTINGS, &cur) || !tabletW || !tabletH) return false;
+
+    // Resolution: same orientation first, then the closest shape, then the closest size.
+    const bool portrait = tabletH > tabletW;
+    const double aspect = std::log(double(tabletW) / tabletH);
+    DWORD bestW = cur.dmPelsWidth, bestH = cur.dmPelsHeight;
+    double bestScore = 1e18;
     DEVMODEW dm{};
     dm.dmSize = sizeof dm;
-    if (!EnumDisplaySettingsW(gdiName.c_str(), ENUM_CURRENT_SETTINGS, &dm)) return;
-    if (dm.dmDisplayFrequency == hz) return;
-    dm.dmDisplayFrequency = hz;
-    dm.dmFields = DM_DISPLAYFREQUENCY;
-    LONG rc = ChangeDisplaySettingsExW(gdiName.c_str(), &dm, nullptr, 0, nullptr);
-    Log("Set %s to %u Hz: %s", Narrow(gdiName).c_str(), hz, rc == DISP_CHANGE_SUCCESSFUL ? "ok" : "not supported");
+    for (DWORD i = 0; EnumDisplaySettingsW(gdiName.c_str(), i, &dm); i++) {
+        if (!dm.dmPelsWidth || !dm.dmPelsHeight) continue;
+        double score = ((dm.dmPelsHeight > dm.dmPelsWidth) != portrait ? 1000.0 : 0.0) +
+                       std::round(std::abs(std::log(double(dm.dmPelsWidth) / dm.dmPelsHeight) - aspect) * 100) +
+                       std::abs(std::log(double(dm.dmPelsWidth) * dm.dmPelsHeight / (double(tabletW) * tabletH))) * 0.01;
+        if (score < bestScore) {
+            bestScore = score;
+            bestW = dm.dmPelsWidth;
+            bestH = dm.dmPelsHeight;
+        }
+    }
+    // Refresh rate at that resolution: the requested one, else the closest.
+    DWORD bestHz = cur.dmDisplayFrequency;
+    int bestDiff = INT_MAX;
+    for (DWORD i = 0; EnumDisplaySettingsW(gdiName.c_str(), i, &dm); i++) {
+        if (dm.dmPelsWidth != bestW || dm.dmPelsHeight != bestH) continue;
+        int diff = std::abs(int(dm.dmDisplayFrequency) - int(hz));
+        if (diff < bestDiff) {
+            bestDiff = diff;
+            bestHz = dm.dmDisplayFrequency;
+        }
+    }
+    if (cur.dmPelsWidth == bestW && cur.dmPelsHeight == bestH && cur.dmDisplayFrequency == bestHz) return false;
+
+    DEVMODEW want{};
+    want.dmSize = sizeof want;
+    want.dmPelsWidth = bestW;
+    want.dmPelsHeight = bestH;
+    want.dmDisplayFrequency = bestHz;
+    want.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
+    LONG rc = ChangeDisplaySettingsExW(gdiName.c_str(), &want, nullptr, 0, nullptr); // not saved to the registry
+    Log("Virtual monitor %lux%lu @ %lu Hz -> %lux%lu @ %lu Hz for a %ux%u tablet: %s", cur.dmPelsWidth,
+        cur.dmPelsHeight, cur.dmDisplayFrequency, bestW, bestH, bestHz, tabletW, tabletH,
+        rc == DISP_CHANGE_SUCCESSFUL ? "ok" : "failed");
+    return rc == DISP_CHANGE_SUCCESSFUL;
 }
 
 int MoveWindowsToPrimary() {

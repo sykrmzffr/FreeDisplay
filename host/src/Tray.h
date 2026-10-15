@@ -10,7 +10,7 @@ constexpr UINT kShowSettingsMsg = WM_APP + 4;
 class Tray {
 public:
     struct Callbacks {
-        std::function<void()> onQualityChanged; // the stream must restart at the new size
+        std::function<void()> onQualityChanged; // the stream must restart (new size or orientation)
         std::function<void()> onQuit;
         std::function<void()> onDisplayChanged; // monitors added/removed/moved (e.g. Win+P)
         std::function<void()> onRestart;        // start a fresh copy, then quit
@@ -34,7 +34,7 @@ private:
 
     // Saves settings after a change from the menu or the settings window and
     // restarts the stream if the picture size changed.
-    void SettingsChanged(int oldQuality);
+    void SettingsChanged(int oldQuality, int oldOrientation);
 
     // Settings window (created on demand, one at a time).
     void ShowSettings();

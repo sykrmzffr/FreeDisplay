@@ -9,7 +9,7 @@ namespace proto {
 
 constexpr uint16_t kPort = 27184;
 constexpr uint32_t kMagic = 0x46445350; // "FDSP"
-constexpr uint16_t kVersion = 2;
+constexpr uint16_t kVersion = 3; // 3: hello carries decoder limits; ORIENTATION message
 
 enum MsgType : uint8_t {
     kHello = 1,
@@ -21,7 +21,10 @@ enum MsgType : uint8_t {
     kDecoderInfo = 8, // tablet -> host: UTF-8 description of the decoder
     kPing = 9,        // host -> tablet: u64 hostUs
     kPong = 10,       // tablet -> host: the ping payload echoed back
+    kOrientation = 11, // host -> tablet: u8 Orientation
 };
+
+enum Orientation : uint8_t { kOrientAuto = 0, kOrientLandscape = 1, kOrientPortrait = 2 };
 
 enum InputAction : uint8_t {
     kActDown = 0,

@@ -12,6 +12,7 @@ struct Settings {
     std::atomic<bool> moveWindowsBack{true}; // rescue windows from the tablet screen when it goes away
     enum Saver : int { kSaverOnBattery = 0, kSaverAlways = 1, kSaverOff = 2 };
     std::atomic<int> batterySaver{kSaverOnBattery}; // 60 Hz instead of up to 120 Hz
+    std::atomic<int> orientation{0}; // 0 follow the tablet, 1 landscape, 2 portrait (proto::Orientation)
 
     // True when battery saver applies right now (setting + power source).
     bool SaverActive() const;

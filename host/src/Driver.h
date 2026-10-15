@@ -24,6 +24,15 @@ bool InstalledByUs();
 bool RunElevatedInstall();
 bool RunElevatedUninstall();
 
+// True when the driver's settings were written by an older FreeDisplay (a file the
+// user made is never touched). New settings take effect after a restart.
+bool SettingsOutdated();
+
+// Rewrites FreeDisplay's driver settings; 0 on success. Works without admin rights
+// when the folder allows it, else use RunElevatedUpdateSettings (--update-driver-settings).
+int UpdateSettings();
+bool RunElevatedUpdateSettings();
+
 // Elevated entry points (--install-driver / --uninstall-driver). Return exit codes.
 int Install();
 int Uninstall();

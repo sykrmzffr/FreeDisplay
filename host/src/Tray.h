@@ -3,7 +3,10 @@
 #include <functional>
 #include <string>
 
-// Notification-area icon and menu for the host. Runs on the UI thread.
+// Posted to the tray window by a second copy of FreeDisplay: show the settings window.
+constexpr UINT kShowSettingsMsg = WM_APP + 4;
+
+// Notification-area icon, its menu and the settings window. Runs on the UI thread.
 class Tray {
 public:
     struct Callbacks {
@@ -22,10 +25,25 @@ public:
 
 private:
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+    static LRESULT CALLBACK SettingsProc(HWND, UINT, WPARAM, LPARAM);
     void ShowMenu();
     void ApplyStatus();
+    std::wstring CurrentStatus();
+
+    // Saves settings after a change from the menu or the settings window and
+    // restarts the stream if the picture size changed.
+    void SettingsChanged(int oldQuality);
+
+    // Settings window (created on demand, one at a time).
+    void ShowSettings();
+    void LayoutSettings();
+    void RefreshSettings(); // controls <- settings
+    void OnSettingsCommand(int id, int code);
 
     HWND hwnd_ = nullptr;
+    HWND settings_ = nullptr;
+    HFONT font_ = nullptr, titleFont_ = nullptr;
+    HINSTANCE inst_ = nullptr;
     HICON icon_ = nullptr;
     Callbacks cb_;
     std::wstring status_ = L"Starting...";

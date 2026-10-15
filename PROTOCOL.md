@@ -81,6 +81,7 @@ Echoes a PING payload unchanged, as soon as it is read.
 |--------|------|
 | width  | u32 encoded width |
 | height | u32 encoded height |
+| fps    | u32 stream rate; the tablet matches its screen refresh to it (absent in older hosts) |
 
 ### 3 VIDEO_FRAME
 | Field | Type |

@@ -46,17 +46,24 @@ copy `dist\tablet\FreeDisplay.apk` to the tablet and open it.
 
 ## Use
 
-The tray icon's menu has:
+Click the tray icon (or start FreeDisplay again from the Start menu) for the
+settings window; right-click it for the same options as a menu, plus **Quit**:
 
 - **Touch input / Pen input**: turn tablet input on or off (applies instantly).
 - **Video quality**: Sharp (full resolution), Balanced (75%, default),
   Fastest (50%). Lower = less latency, softer text.
+- **Battery saver**: When on battery (default), Always, or Off. It runs the
+  virtual monitor, the stream and the tablet screen at 60 Hz instead of up to
+  120 Hz. Turning it on or off (or plugging in the charger) restarts the
+  stream for a moment, so the refresh rate is only changed before capture starts.
+  On Xiaomi tablets, set **Settings > Display > Refresh rate** to 120 Hz, or
+  the system limits apps to 90 Hz.
 - **Move windows back when the tablet disconnects** (on by default): when the
   cable is unplugged, or the tablet app is closed for 3 seconds, windows on the
   tablet screen and the mouse pointer return to the main screen. The virtual
   monitor itself stays on: switching the driver off and on worked, but
   capturing it afterwards froze Windows in testing.
-- **Start with Windows**, **Open log**, **Quit**.
+- **Start with Windows**, **Open log**.
 
 `FreeDisplay.exe --move-windows-back` does the window move by hand.
 

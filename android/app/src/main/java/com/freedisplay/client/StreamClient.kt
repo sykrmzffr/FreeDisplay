@@ -24,7 +24,7 @@ class StreamClient(
 ) {
     interface Listener {
         fun onStatus(text: String)
-        fun onVideoSize(width: Int, height: Int)
+        fun onVideoSize(width: Int, height: Int, fps: Int)
         fun onStreaming()
     }
 
@@ -125,8 +125,9 @@ class StreamClient(
                     Protocol.VIDEO_CONFIG -> {
                         val w = readInt(buffer, 0)
                         val h = readInt(buffer, 4)
+                        val fps = if (length >= 12) readInt(buffer, 8) else 0 // 0: host did not say
                         decoder.configure(w, h)
-                        listener.onVideoSize(w, h)
+                        listener.onVideoSize(w, h, fps)
                     }
                     Protocol.VIDEO_FRAME -> {
                         val pts = readLong(buffer, 0)

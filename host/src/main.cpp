@@ -30,7 +30,7 @@ namespace {
 
 constexpr const wchar_t* kPackage = L"com.freedisplay.client";
 constexpr const wchar_t* kActivity = L"com.freedisplay.client/.MainActivity";
-constexpr int kAppVersionCode = 8; // keep in sync with android/app/build.gradle.kts
+constexpr int kAppVersionCode = 9; // keep in sync with android/app/build.gradle.kts
 
 struct Options {
     int display = -1;     // -1: auto (VDD monitor, else primary)
@@ -229,6 +229,10 @@ void RunSession(SOCKET sock, const Options& opt) {
 
     // Run the virtual monitor and the stream at the tablet's refresh rate (capped by --fps).
     UINT fps = std::min<UINT>(opt.fps, tabHz ? tabHz : 60);
+    // Battery saver: 60 Hz monitor and stream. Changing it restarts the session, so
+    // the refresh rate is only ever switched here, before capture starts.
+    const bool saver = AppSettings().SaverActive();
+    if (saver) fps = std::min(fps, 60u);
     if (isVdd) VirtualMonitor::SetRefreshRate(output.gdiName, fps);
 
     int scalePct = opt.scalePct > 0 ? opt.scalePct : AppSettings().qualityPct.load();
@@ -253,9 +257,10 @@ void RunSession(SOCKET sock, const Options& opt) {
     proto::Writer cfg;
     cfg.u32(w);
     cfg.u32(h);
+    cfg.u32(fps); // the tablet matches its screen refresh to this
     if (!SendMsg(sock, proto::kVideoConfig, cfg.buf)) return;
     Status(L"Streaming to " + Widen(name) + L" (" + std::to_wstring(w) + L"x" + std::to_wstring(h) + L" @ " +
-               std::to_wstring(fps) + L" Hz)",
+               std::to_wstring(fps) + L" Hz" + (saver ? L", battery saver" : L"") + L")",
            true);
     g_restart = false;
 
@@ -356,6 +361,10 @@ void RunSession(SOCKET sock, const Options& opt) {
             if (!SendMsg(sock, proto::kPing, pw.buf)) break;
             if (lastPing - lastHeard > 1500000) {
                 Log("Tablet stopped responding");
+                break;
+            }
+            if (AppSettings().SaverActive() != saver) {
+                Log("Battery saver %s: restarting the stream", saver ? "off" : "on");
                 break;
             }
         }
@@ -631,9 +640,17 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
 
     HANDLE single = CreateMutexW(nullptr, TRUE, L"Local\\FreeDisplayHost");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        if (!stdoutRedirected && !console)
+        // Started again (Start menu, desktop): bring up the running copy's settings window.
+        HWND tray = FindWindowW(L"FreeDisplayTray", nullptr);
+        if (tray) {
+            DWORD pid = 0;
+            GetWindowThreadProcessId(tray, &pid);
+            AllowSetForegroundWindow(pid);
+            PostMessageW(tray, kShowSettingsMsg, 0, 0);
+        } else if (!stdoutRedirected && !console) {
             MessageBoxW(nullptr, L"FreeDisplay is already running. Look for its icon in the notification area.",
                         L"FreeDisplay", MB_ICONINFORMATION);
+        }
         return 0;
     }
 

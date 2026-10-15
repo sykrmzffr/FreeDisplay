@@ -53,7 +53,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamClient.Listener {
         root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> fitVideo() }
         setContentView(root)
 
-        requestHighRefreshRate()
+        refreshRate = requestRefreshRate(TARGET_HZ)
         surfaceView.holder.addCallback(this)
         surfaceView.setOnTouchListener { _, e -> sendMotion(e); true }
         surfaceView.setOnGenericMotionListener { _, e -> sendMotion(e); true }
@@ -93,23 +93,24 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamClient.Listener {
         ).also { it.start() }
     }
 
-    /** Refresh rate of the display mode we asked for in [requestHighRefreshRate]. */
+    /** Highest refresh rate we can run at (reported to the host in the hello). */
     private var refreshRate = 60
 
     /**
-     * Asks for the display mode closest to 120 Hz at native resolution. Tablets often
-     * idle at 50-60 Hz, which adds up to a frame of delay to every update.
+     * Asks for the display mode closest to [target] Hz at native resolution and returns
+     * its rate. Tablets often idle at 50-60 Hz, which adds up to a frame of delay to
+     * every update; in battery saver the host asks for 60 Hz instead.
      */
     @Suppress("DEPRECATION")
-    private fun requestHighRefreshRate() {
-        val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display else windowManager.defaultDisplay
-        display ?: return
+    private fun requestRefreshRate(target: Float): Int {
+        val display = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display else windowManager.defaultDisplay)
+            ?: return refreshRate
         val current = display.mode
         val best = display.supportedModes
             .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
-            .minByOrNull { kotlin.math.abs(it.refreshRate - TARGET_HZ) } ?: return
+            .minByOrNull { kotlin.math.abs(it.refreshRate - target) } ?: return refreshRate
         window.attributes = window.attributes.apply { preferredDisplayModeId = best.modeId }
-        refreshRate = Math.round(best.refreshRate)
+        return Math.round(best.refreshRate)
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
@@ -141,10 +142,18 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamClient.Listener {
         status.visibility = View.VISIBLE
     }
 
-    override fun onVideoSize(width: Int, height: Int) = runOnUiThread {
+    override fun onVideoSize(width: Int, height: Int, fps: Int) = runOnUiThread {
         videoW = width
         videoH = height
         fitVideo()
+        if (fps > 0) {
+            // Match the screen to the stream: 120 Hz normally, 60 Hz in battery saver.
+            val hz = requestRefreshRate(fps.toFloat())
+            val surface = surfaceView.holder.surface
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && surface.isValid) {
+                surface.setFrameRate(hz.toFloat(), android.view.Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE)
+            }
+        }
     }
 
     override fun onStreaming() = runOnUiThread { status.visibility = View.GONE }

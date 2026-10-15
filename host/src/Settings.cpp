@@ -37,6 +37,13 @@ std::wstring Settings::DataDir() {
     return dir;
 }
 
+bool Settings::SaverActive() const {
+    if (batterySaver == kSaverAlways) return true;
+    if (batterySaver == kSaverOff) return false;
+    SYSTEM_POWER_STATUS ps;
+    return GetSystemPowerStatus(&ps) && ps.ACLineStatus == 0; // 0 = on battery
+}
+
 void Settings::Load() {
     touch = ReadBool(L"Touch", true);
     pen = ReadBool(L"Pen", true);
@@ -44,6 +51,8 @@ void Settings::Load() {
     qualityPct = (q == 100 || q == 75 || q == 50) ? q : 75;
     startWithWindows = ReadBool(L"StartWithWindows", false);
     moveWindowsBack = ReadBool(L"MoveWindowsBack", true);
+    int saver = GetPrivateProfileIntW(kSection, L"BatterySaver", kSaverOnBattery, IniPath().c_str());
+    batterySaver = (saver >= kSaverOnBattery && saver <= kSaverOff) ? saver : kSaverOnBattery;
 }
 
 void Settings::Save() const {
@@ -52,6 +61,7 @@ void Settings::Save() const {
     WriteInt(L"Quality", qualityPct);
     WriteInt(L"StartWithWindows", startWithWindows ? 1 : 0);
     WriteInt(L"MoveWindowsBack", moveWindowsBack ? 1 : 0);
+    WriteInt(L"BatterySaver", batterySaver);
 }
 
 bool Settings::ApplyStartWithWindows(bool enable) {

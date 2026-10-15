@@ -9,6 +9,7 @@ struct Settings {
     std::atomic<bool> pen{true};            // inject stylus input
     std::atomic<int> qualityPct{75};        // encode size as % of the monitor (100/75/50)
     std::atomic<bool> startWithWindows{false};
+    std::atomic<bool> autoMonitor{true};    // turn the virtual monitor off while no tablet is connected
 
     void Load();
     void Save() const;

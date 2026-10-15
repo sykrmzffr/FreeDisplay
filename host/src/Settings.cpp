@@ -43,6 +43,7 @@ void Settings::Load() {
     int q = GetPrivateProfileIntW(kSection, L"Quality", 75, IniPath().c_str());
     qualityPct = (q == 100 || q == 75 || q == 50) ? q : 75;
     startWithWindows = ReadBool(L"StartWithWindows", false);
+    autoMonitor = ReadBool(L"AutoMonitor", true);
 }
 
 void Settings::Save() const {
@@ -50,6 +51,7 @@ void Settings::Save() const {
     WriteInt(L"Pen", pen ? 1 : 0);
     WriteInt(L"Quality", qualityPct);
     WriteInt(L"StartWithWindows", startWithWindows ? 1 : 0);
+    WriteInt(L"AutoMonitor", autoMonitor ? 1 : 0);
 }
 
 bool Settings::ApplyStartWithWindows(bool enable) {

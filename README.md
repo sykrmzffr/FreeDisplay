@@ -3,6 +3,10 @@
 Use an Android tablet as a second monitor for Windows over a USB cable, with
 touch and pen input. Free and built from our own code.
 
+FreeDisplay is a vibe-coded project: it was built through AI-assisted
+development, and every feature was tested on real hardware (an AMD laptop and a
+Xiaomi tablet). See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
+
 ## How it works
 
 ```

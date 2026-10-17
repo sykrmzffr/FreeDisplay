@@ -39,6 +39,14 @@ bool SetTopology(int mode);
 // nothing else, so "PC screen only" turns off just the tablet's screen.
 bool OnlyVddBesidesBuiltIn();
 
+// Desktop area of the VDD monitor; false when it is not on the desktop.
+bool Bounds(RECT& out);
+
+// Moves windows left entirely off-screen inside `area` (where the VDD monitor was)
+// onto the primary monitor. Windows normally does this when a monitor goes away,
+// but some apps (e.g. Flutter ones) put themselves back at their old position.
+int MoveStrandedWindows(const RECT& area);
+
 // Moves app windows (and the pointer) off the VDD monitor onto the primary
 // monitor, keeping their state (normal/maximized/minimized) and their place
 // relative to the screen. Returns the number of windows moved.

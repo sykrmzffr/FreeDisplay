@@ -564,12 +564,25 @@ void HostLoop(Options opt) {
         needRescue = false;
         if (!settings.moveWindowsBack) return;
         int mode = VirtualMonitor::Topology();
-        if ((mode == 0 || mode == 1) && VirtualMonitor::OnlyVddBesidesBuiltIn() && VirtualMonitor::SetTopology(2)) {
-            settings.restoreMode = mode;
-            settings.Save();
-            Log("%s: turned the tablet screen off", why);
-            Status(L"Tablet screen off until the tablet is connected");
-            return;
+        if ((mode == 0 || mode == 1) && VirtualMonitor::OnlyVddBesidesBuiltIn()) {
+            // Move windows ourselves first: when the screen goes, Windows should move
+            // them, but some apps put themselves back where they were, off-screen.
+            RECT area{};
+            bool haveArea = VirtualMonitor::Bounds(area);
+            int moved = VirtualMonitor::MoveWindowsToPrimary();
+            if (VirtualMonitor::SetTopology(2)) {
+                settings.restoreMode = mode;
+                settings.Save();
+                Log("%s: moved %d window(s) back and turned the tablet screen off", why, moved);
+                Status(L"Tablet screen off until the tablet is connected");
+                for (int wait : {1000, 2000}) { // then catch any that moved themselves back
+                    if (!haveArea) break;
+                    Sleep(wait);
+                    if (int n = VirtualMonitor::MoveStrandedWindows(area))
+                        Log("Moved %d window(s) left off-screen back to the main screen", n);
+                }
+                return;
+            }
         }
         int n = VirtualMonitor::MoveWindowsToPrimary();
         Log("%s: moved %d window(s) back to the main screen", why, n);

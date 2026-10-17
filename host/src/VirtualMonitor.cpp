@@ -202,6 +202,46 @@ bool OnlyVddBesidesBuiltIn() {
     return builtIn > 0 && vdd > 0 && other == 0;
 }
 
+bool Bounds(RECT& out) {
+    std::wstring name = Find();
+    if (name.empty()) return false;
+    DEVMODEW dm{};
+    dm.dmSize = sizeof dm;
+    if (!EnumDisplaySettingsW(name.c_str(), ENUM_CURRENT_SETTINGS, &dm) || !dm.dmPelsWidth) return false;
+    MonitorRects m;
+    if (!FindMonitor(name, m)) return false;
+    MONITORINFO mi{sizeof mi};
+    if (!GetMonitorInfoW(m.handle, &mi)) return false;
+    out = mi.rcMonitor;
+    return true;
+}
+
+int MoveStrandedWindows(const RECT& area) {
+    HMONITOR primary = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
+    MONITORINFO pmi{sizeof pmi};
+    if (!GetMonitorInfoW(primary, &pmi)) return 0;
+    std::vector<HWND> windows;
+    EnumWindows(
+        [](HWND w, LPARAM lp) -> BOOL {
+            reinterpret_cast<std::vector<HWND>*>(lp)->push_back(w);
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&windows));
+    int moved = 0;
+    for (HWND w : windows) {
+        if (!IsMovableWindow(w) || IsIconic(w) || MonitorFromWindow(w, MONITOR_DEFAULTTONULL)) continue;
+        RECT r, overlap;
+        if (!GetWindowRect(w, &r) || r.right - r.left < 40 || r.bottom - r.top < 40 ||
+            !IntersectRect(&overlap, &r, &area))
+            continue;
+        RECT target = MapRect(r, area, pmi.rcWork);
+        if (SetWindowPos(w, nullptr, target.left, target.top, target.right - target.left,
+                         target.bottom - target.top, SWP_NOZORDER | SWP_NOACTIVATE))
+            moved++;
+    }
+    return moved;
+}
+
 int MoveWindowsToPrimary() {
     MonitorRects vdd;
     std::wstring name = Find();

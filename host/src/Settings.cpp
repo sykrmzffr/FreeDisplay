@@ -51,6 +51,8 @@ void Settings::Load() {
     qualityPct = (q == 100 || q == 75 || q == 50) ? q : 75;
     startWithWindows = ReadBool(L"StartWithWindows", false);
     moveWindowsBack = ReadBool(L"MoveWindowsBack", true);
+    int restore = int(GetPrivateProfileIntW(kSection, L"RestoreScreenMode", -1, IniPath().c_str()));
+    restoreMode = (restore == 0 || restore == 1) ? restore : -1;
     int saver = GetPrivateProfileIntW(kSection, L"BatterySaver", kSaverOnBattery, IniPath().c_str());
     batterySaver = (saver >= kSaverOnBattery && saver <= kSaverOff) ? saver : kSaverOnBattery;
     int orient = GetPrivateProfileIntW(kSection, L"Orientation", 0, IniPath().c_str());
@@ -63,6 +65,7 @@ void Settings::Save() const {
     WriteInt(L"Quality", qualityPct);
     WriteInt(L"StartWithWindows", startWithWindows ? 1 : 0);
     WriteInt(L"MoveWindowsBack", moveWindowsBack ? 1 : 0);
+    WriteInt(L"RestoreScreenMode", restoreMode.load());
     WriteInt(L"BatterySaver", batterySaver);
     WriteInt(L"Orientation", orientation);
 }

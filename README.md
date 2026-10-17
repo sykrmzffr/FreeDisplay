@@ -101,11 +101,13 @@ settings window; right-click it for the same options as a menu, plus **Quit**:
   stream for a moment, so the refresh rate is only changed before capture starts.
   On Xiaomi tablets, set **Settings > Display > Refresh rate** to 120 Hz, or
   the system limits apps to 90 Hz.
-- **Move windows back when the tablet disconnects** (on by default): when the
-  cable is unplugged, or the tablet app is closed for 3 seconds, windows on the
-  tablet screen and the mouse pointer return to the main screen. The virtual
-  monitor itself stays on: switching the driver off and on worked, but
-  capturing it afterwards froze Windows in testing.
+- **Turn off the tablet screen when it disconnects** (on by default): when the
+  cable is unplugged, or the tablet app is closed for 3 seconds, FreeDisplay
+  switches Windows to "PC screen only" (as Win+P does), so the extra screen is
+  gone and windows and the pointer stay on the main screen. Plugging the tablet
+  back in restores Extend (or Duplicate). With another monitor attached it only
+  moves windows back, so that monitor stays on. The driver itself stays
+  installed and running: switching it off and on froze Windows in testing.
 - **Orientation**: Auto (follows the tablet), Landscape or Portrait. The
   virtual monitor switches to the matching shape. Android 16 lets large
   tablets ignore an app's rotation request, so when the tablet's screen is the

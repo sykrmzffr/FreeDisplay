@@ -28,6 +28,17 @@ bool MatchTablet(const std::wstring& gdiName, UINT tabletW, UINT tabletH, UINT h
 // True when the VDD monitor offers w x h (in that orientation).
 bool HasMode(const std::wstring& gdiName, UINT w, UINT h);
 
+// Projection as in Win+P: 0 Extend, 1 Duplicate, 2 PC screen only, -1 other.
+int Topology();
+
+// Same as picking that Win+P option (done by Windows, which keeps the VDD device
+// running; only the monitor leaves the desktop). True on success.
+bool SetTopology(int mode);
+
+// True when the active screens are built-in panel(s) plus the VDD monitor and
+// nothing else, so "PC screen only" turns off just the tablet's screen.
+bool OnlyVddBesidesBuiltIn();
+
 // Moves app windows (and the pointer) off the VDD monitor onto the primary
 // monitor, keeping their state (normal/maximized/minimized) and their place
 // relative to the screen. Returns the number of windows moved.

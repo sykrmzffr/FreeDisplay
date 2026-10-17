@@ -5,6 +5,7 @@
 #include "Resources.h"
 #include "Settings.h"
 #include "Util.h"
+#include "VirtualMonitor.h"
 #include <vector>
 
 namespace {
@@ -70,21 +71,14 @@ constexpr const wchar_t* kModeNames[] = {L"Extend - tablet is a second screen",
 
 // Current projection mode as in Win+P: 0 extend, 1 duplicate, -1 other (e.g. one screen only).
 int CurrentMode() {
-    UINT32 paths = 0, modes = 0;
-    if (GetDisplayConfigBufferSizes(QDC_DATABASE_CURRENT, &paths, &modes) != ERROR_SUCCESS) return -1;
-    std::vector<DISPLAYCONFIG_PATH_INFO> p(paths);
-    std::vector<DISPLAYCONFIG_MODE_INFO> m(modes);
-    DISPLAYCONFIG_TOPOLOGY_ID topology{};
-    if (QueryDisplayConfig(QDC_DATABASE_CURRENT, &paths, p.data(), &modes, m.data(), &topology) != ERROR_SUCCESS)
-        return -1;
-    return topology == DISPLAYCONFIG_TOPOLOGY_EXTEND ? 0 : topology == DISPLAYCONFIG_TOPOLOGY_CLONE ? 1 : -1;
+    int mode = VirtualMonitor::Topology();
+    return mode == 0 || mode == 1 ? mode : -1;
 }
 
 // Same as choosing Extend or Duplicate in Win+P; the stream follows on its own.
 void SetMode(int mode) {
-    LONG rc = SetDisplayConfig(0, nullptr, 0, nullptr,
-                               SDC_APPLY | (mode == 1 ? SDC_TOPOLOGY_CLONE : SDC_TOPOLOGY_EXTEND));
-    Log("Screen mode -> %s: %s", mode == 1 ? "duplicate" : "extend", rc == ERROR_SUCCESS ? "ok" : "failed");
+    AppSettings().restoreMode = -1; // the user chose; nothing to restore later
+    VirtualMonitor::SetTopology(mode == 1 ? 1 : 0);
 }
 
 void OpenLog() {
@@ -236,7 +230,7 @@ void Tray::ShowMenu() {
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(orient), L"&Orientation");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(saver), L"&Battery saver");
     AppendMenuW(menu, MF_STRING | (s.moveWindowsBack ? MF_CHECKED : 0), kIdMoveBack,
-                L"&Move windows back when the tablet disconnects");
+                L"&Turn off the tablet screen when it disconnects");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (s.startWithWindows ? MF_CHECKED : 0), kIdAutostart, L"Start with &Windows");
     AppendMenuW(menu, MF_STRING, kIdLog, L"Open &log");
@@ -314,7 +308,7 @@ void Tray::ShowSettings() {
     add(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, kCtlMode);
     add(L"STATIC", L"Tablet o&rientation", SS_LEFT, kCtlOrientLabel);
     add(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, kCtlOrient);
-    add(L"BUTTON", L"&Move windows back when the tablet disconnects", BS_AUTOCHECKBOX | WS_TABSTOP,
+    add(L"BUTTON", L"&Turn off the tablet screen when it disconnects", BS_AUTOCHECKBOX | WS_TABSTOP,
         kCtlMoveBack);
     add(L"BUTTON", L"Start with &Windows", BS_AUTOCHECKBOX | WS_TABSTOP, kCtlAutostart);
     add(L"BUTTON", L"Open &log", BS_PUSHBUTTON | WS_TABSTOP, kCtlLog);

@@ -149,6 +149,59 @@ bool HasMode(const std::wstring& gdiName, UINT w, UINT h) {
     return false;
 }
 
+int Topology() {
+    UINT32 paths = 0, modes = 0;
+    if (GetDisplayConfigBufferSizes(QDC_DATABASE_CURRENT, &paths, &modes) != ERROR_SUCCESS) return -1;
+    std::vector<DISPLAYCONFIG_PATH_INFO> p(paths);
+    std::vector<DISPLAYCONFIG_MODE_INFO> m(modes);
+    DISPLAYCONFIG_TOPOLOGY_ID topology{};
+    if (QueryDisplayConfig(QDC_DATABASE_CURRENT, &paths, p.data(), &modes, m.data(), &topology) != ERROR_SUCCESS)
+        return -1;
+    switch (topology) {
+    case DISPLAYCONFIG_TOPOLOGY_EXTEND: return 0;
+    case DISPLAYCONFIG_TOPOLOGY_CLONE: return 1;
+    case DISPLAYCONFIG_TOPOLOGY_INTERNAL: return 2;
+    default: return -1;
+    }
+}
+
+bool SetTopology(int mode) {
+    static const UINT32 flags[] = {SDC_TOPOLOGY_EXTEND, SDC_TOPOLOGY_CLONE, SDC_TOPOLOGY_INTERNAL};
+    static const char* names[] = {"extend", "duplicate", "PC screen only"};
+    if (mode < 0 || mode > 2) return false;
+    LONG rc = SetDisplayConfig(0, nullptr, 0, nullptr, SDC_APPLY | flags[mode]);
+    Log("Screen mode -> %s: %s", names[mode], rc == ERROR_SUCCESS ? "ok" : "failed");
+    return rc == ERROR_SUCCESS;
+}
+
+bool OnlyVddBesidesBuiltIn() {
+    UINT32 paths = 0, modes = 0;
+    if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &paths, &modes) != ERROR_SUCCESS) return false;
+    std::vector<DISPLAYCONFIG_PATH_INFO> p(paths);
+    std::vector<DISPLAYCONFIG_MODE_INFO> m(modes);
+    if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &paths, p.data(), &modes, m.data(), nullptr) != ERROR_SUCCESS)
+        return false;
+    int builtIn = 0, vdd = 0, other = 0;
+    for (UINT32 i = 0; i < paths; i++) {
+        DISPLAYCONFIG_TARGET_DEVICE_NAME name{};
+        name.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+        name.header.size = sizeof name;
+        name.header.adapterId = p[i].targetInfo.adapterId;
+        name.header.id = p[i].targetInfo.id;
+        if (DisplayConfigGetDeviceInfo(&name.header) != ERROR_SUCCESS) return false;
+        switch (name.outputTechnology) {
+        case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL:
+        case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED:
+        case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_UDI_EMBEDDED:
+        case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_LVDS: builtIn++; break;
+        default:
+            if (wcsstr(name.monitorFriendlyDeviceName, L"VDD")) vdd++;
+            else other++;
+        }
+    }
+    return builtIn > 0 && vdd > 0 && other == 0;
+}
+
 int MoveWindowsToPrimary() {
     MonitorRects vdd;
     std::wstring name = Find();

@@ -553,12 +553,33 @@ void HostLoop(Options opt) {
     std::string lastState = "?";
     uint64_t noDeviceSince = 0;  // debounces brief adb hiccups
     uint64_t sessionEndedAt = 0; // last stream end while the cable stayed in, 0 if none
-    bool needRescue = false;     // a stream ran since windows were last moved back
+    // The tablet's screen stays on the desktop only while the tablet shows it: when it
+    // goes away, switch to "PC screen only" like Win+P (Windows moves the windows
+    // back), and to the previous mode when it returns. With other monitors attached
+    // that would switch them off too, so then only the windows are moved back.
+    // Switching the VDD device itself off froze Windows (see VirtualMonitor.h).
+    Settings& settings = AppSettings();
+    bool needRescue = !VirtualMonitor::Find().empty() && VirtualMonitor::Topology() != 2; // off at start without a tablet
     auto rescueWindows = [&](const char* why) {
         needRescue = false;
-        if (!AppSettings().moveWindowsBack) return;
+        if (!settings.moveWindowsBack) return;
+        int mode = VirtualMonitor::Topology();
+        if ((mode == 0 || mode == 1) && VirtualMonitor::OnlyVddBesidesBuiltIn() && VirtualMonitor::SetTopology(2)) {
+            settings.restoreMode = mode;
+            settings.Save();
+            Log("%s: turned the tablet screen off", why);
+            Status(L"Tablet screen off until the tablet is connected");
+            return;
+        }
         int n = VirtualMonitor::MoveWindowsToPrimary();
         Log("%s: moved %d window(s) back to the main screen", why, n);
+    };
+    auto screenOn = [&] {
+        int mode = settings.restoreMode.exchange(-1);
+        if (mode < 0) return;
+        settings.Save();
+        if (VirtualMonitor::Topology() != 2) return; // the user changed it meanwhile
+        if (VirtualMonitor::SetTopology(mode)) Sleep(1500); // let the desktop settle before capturing
     };
     while (!g_quit) {
         if (SuperDisplayRunning()) {
@@ -597,6 +618,7 @@ void HostLoop(Options opt) {
         if (serial != current) {
             Log("Tablet connected: %s", serial.c_str());
             Status(L"Tablet connected, starting app...");
+            screenOn();
             if (!PrepareDevice(adb, serial, opt)) {
                 Status(L"Could not start the tablet app (see log)");
                 Sleep(2000);
@@ -611,6 +633,7 @@ void HostLoop(Options opt) {
             continue;
         }
         Log("Tablet app connected");
+        screenOn(); // reopened after the screen was turned off
         sessionEndedAt = 0;
         needRescue = true;
         RunSession(c, opt);

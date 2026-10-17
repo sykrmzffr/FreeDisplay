@@ -7,6 +7,7 @@
 #include <timeapi.h>
 #include <algorithm>
 #include <atomic>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <string>
@@ -31,7 +32,7 @@ namespace {
 
 constexpr const wchar_t* kPackage = L"com.freedisplay.client";
 constexpr const wchar_t* kActivity = L"com.freedisplay.client/.MainActivity";
-constexpr int kAppVersionCode = 12; // keep in sync with android/app/build.gradle.kts
+constexpr int kAppVersionCode = 13; // keep in sync with android/app/build.gradle.kts
 
 struct Options {
     int display = -1;     // -1: auto (VDD monitor, else primary)
@@ -203,7 +204,8 @@ UINT AutoBitrate(UINT w, UINT h, UINT fps) {
     return UINT(std::clamp(bps, 8e6, 40e6));
 }
 
-void RunSession(SOCKET sock, const Options& opt) {
+// `stillConnected` asks adb whether the tablet is still attached (takes ~50 ms).
+void RunSession(SOCKET sock, const Options& opt, const std::function<bool()>& stillConnected) {
     uint8_t type;
     std::vector<uint8_t> payload;
     if (!RecvMsg(sock, type, payload) || type != proto::kHello) {
@@ -406,6 +408,7 @@ void RunSession(SOCKET sock, const Options& opt) {
     const uint64_t minIntervalUs = 1000000 / fps * 3 / 4;
     bool pending = false;
     uint64_t lastPing = 0;
+    uint64_t quietSince = 0; // the tablet went silent (but may still be attached)
     while (alive && !g_quit && !g_restart && !sendFailed) {
         input.KeepAlive();
         if (NowUs() - lastPing > 500000) { // measures the bare USB/adb round trip
@@ -413,9 +416,24 @@ void RunSession(SOCKET sock, const Options& opt) {
             proto::Writer pw;
             pw.u64(lastPing);
             if (!SendMsg(sock, proto::kPing, pw.buf)) break;
-            if (lastPing - lastHeard > 1500000) {
-                Log("Tablet stopped responding");
-                break;
+            // The tablet answers pings every 500 ms. The USB link or the tablet can pause
+            // for a second or two; restarting then made the tablet flash its waiting
+            // screen and the picture start soft. So only give up when adb no longer sees
+            // the tablet (unplugged) or after 10 s of silence; a closed app ends the
+            // connection by itself.
+            uint64_t heard = lastHeard;
+            if (lastPing > heard && lastPing - heard > 1500000) {
+                if (!quietSince) {
+                    quietSince = heard;
+                    Log("Tablet quiet for 1.5 s; waiting while it is still connected");
+                }
+                if (lastPing - heard > 10000000 || !stillConnected()) {
+                    Log("Tablet stopped responding (silent %.1f s)", (lastPing - heard) / 1e6);
+                    break;
+                }
+            } else if (quietSince) {
+                Log("Tablet answered again after %.1f s", (heard - quietSince) / 1e6);
+                quietSince = 0;
             }
             // Display layout changed (Duplicate/Extend, monitor moved or resized): once it
             // settles, restart if the screen we should stream is no longer this one.
@@ -649,7 +667,11 @@ void HostLoop(Options opt) {
         screenOn(); // reopened after the screen was turned off
         sessionEndedAt = 0;
         needRescue = true;
-        RunSession(c, opt);
+        RunSession(c, opt, [&] {
+            std::string state;
+            adb.RunOn(current, L"get-state", &state, 3000);
+            return state.find("device") != std::string::npos;
+        });
         closesocket(c);
         sessionEndedAt = NowUs();
         if (!g_quit) Status(L"Tablet connected, waiting for the app");

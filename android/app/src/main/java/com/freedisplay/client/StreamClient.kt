@@ -118,14 +118,19 @@ class StreamClient(
         )
         var buffer = ByteArray(1 shl 20)
         var streaming = false
+        var lastMessageNs = System.nanoTime()
         try {
             while (running) {
                 val type = input.readUnsignedByte()
+                // The PC pings every 500 ms, so a long gap means the link or the PC paused.
+                val gapMs = (System.nanoTime() - lastMessageNs) / 1_000_000
+                if (gapMs > 1000) Log.w(TAG, "nothing received from the PC for $gapMs ms")
                 val length = input.readInt()
                 if (length < 0 || length > 64 * 1024 * 1024) throw IllegalStateException("bad length $length")
                 if (buffer.size < length) buffer = ByteArray(length + (length shr 2))
                 input.readFully(buffer, 0, length)
                 val receivedNs = System.nanoTime()
+                lastMessageNs = receivedNs
                 when (type) {
                     Protocol.PING -> send(Protocol.message(Protocol.PONG) { write(buffer, 0, length) })
                     Protocol.ORIENTATION -> if (length >= 1) listener.onOrientation(buffer[0].toInt())
@@ -139,7 +144,10 @@ class StreamClient(
                     Protocol.VIDEO_FRAME -> {
                         val pts = readLong(buffer, 0)
                         val key = (buffer[8].toInt() and 1) != 0
-                        if (!decoder.feed(buffer, 9, length - 9, pts, key, receivedNs)) {
+                        val fed = decoder.feed(buffer, 9, length - 9, pts, key, receivedNs)
+                        val busyMs = (System.nanoTime() - receivedNs) / 1_000_000
+                        if (busyMs > 300) Log.w(TAG, "decoder took $busyMs ms to accept a frame")
+                        if (!fed) {
                             send(Protocol.message(Protocol.REQUEST_KEYFRAME))
                         } else if (!streaming) {
                             streaming = true

@@ -55,8 +55,8 @@ class StreamClient(
     private fun loop() {
         while (running) {
             listener.onStatus(
-                "FreeDisplay\n\nWaiting for your PC…\n\n" +
-                    "1.  Run FreeDisplay on Windows (look for its tray icon)\n" +
+                "Tandem\n\nWaiting for your PC…\n\n" +
+                    "1.  Run Tandem on Windows (look for its tray icon)\n" +
                     "2.  Connect this tablet with a USB cable\n" +
                     "3.  Allow USB debugging if the tablet asks"
             )
@@ -163,6 +163,6 @@ class StreamClient(
         (readInt(b, o).toLong() shl 32) or (readInt(b, o + 4).toLong() and 0xffffffffL)
 
     companion object {
-        private const val TAG = "FreeDisplay"
+        private const val TAG = "Tandem"
     }
 }

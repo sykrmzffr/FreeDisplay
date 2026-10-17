@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "FreeDisplay"
+rootProject.name = "Tandem"
 include(":app")

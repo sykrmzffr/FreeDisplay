@@ -4,9 +4,9 @@
 #include "Util.h"
 
 namespace {
-constexpr const wchar_t* kSection = L"FreeDisplay";
+constexpr const wchar_t* kSection = L"Tandem";
 constexpr const wchar_t* kRunKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-constexpr const wchar_t* kRunValue = L"FreeDisplay";
+constexpr const wchar_t* kRunValue = L"Tandem";
 
 std::wstring IniPath() { return Settings::DataDir() + L"settings.ini"; }
 
@@ -28,7 +28,7 @@ std::wstring Settings::DataDir() {
     PWSTR appData = nullptr;
     std::wstring dir;
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &appData))) {
-        dir = std::wstring(appData) + L"\\FreeDisplay\\";
+        dir = std::wstring(appData) + L"\\Tandem\\";
         CoTaskMemFree(appData);
     } else {
         dir = ExeDir();
@@ -44,7 +44,21 @@ bool Settings::SaverActive() const {
     return GetSystemPowerStatus(&ps) && ps.ACLineStatus == 0; // 0 = on battery
 }
 
+// Settings of FreeDisplay, Tandem's former name, carry over the first time.
+static void MigrateOldSettings() {
+    std::wstring ini = IniPath();
+    if (GetFileAttributesW(ini.c_str()) != INVALID_FILE_ATTRIBUTES) return;
+    PWSTR appData = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &appData))) return;
+    std::wstring old = std::wstring(appData) + L"\\FreeDisplay\\settings.ini";
+    CoTaskMemFree(appData);
+    wchar_t values[4096] = {}; // key=value pairs, each ending in \0
+    if (GetPrivateProfileSectionW(L"FreeDisplay", values, 4096, old.c_str()) > 0)
+        WritePrivateProfileSectionW(kSection, values, ini.c_str());
+}
+
 void Settings::Load() {
+    MigrateOldSettings();
     touch = ReadBool(L"Touch", true);
     pen = ReadBool(L"Pen", true);
     int q = GetPrivateProfileIntW(kSection, L"Quality", 75, IniPath().c_str());

@@ -12,8 +12,8 @@ public static class W {
 }
 "@
 
-$exe = Join-Path $PSScriptRoot "..\out\FreeDisplay.exe"
-$log = Join-Path $env:APPDATA "FreeDisplay\host.log"
+$exe = Join-Path $PSScriptRoot "..\out\Tandem.exe"
+$log = Join-Path $env:APPDATA "Tandem\host.log"
 $adb = Join-Path $env:LOCALAPPDATA "Android\Sdk\platform-tools\adb.exe"
 
 function Wait-Log($pattern, $after = 0, $timeoutSec = 30) {
@@ -27,7 +27,7 @@ function Wait-Log($pattern, $after = 0, $timeoutSec = 30) {
 }
 function LineCount { @(Get-Content $log -ErrorAction SilentlyContinue).Count }
 function Menu($keys) {
-    $h = [W]::FindWindow("FreeDisplayTray", "FreeDisplay")
+    $h = [W]::FindWindow("TandemTray", "Tandem")
     if ($h -eq [IntPtr]::Zero) { throw "tray window not found" }
     [W]::AllowSetForegroundWindow(-1) | Out-Null
     [W]::PostMessage($h, 0x8001, [IntPtr]::Zero, [IntPtr]0x0202) | Out-Null  # WM_APP+1, WM_LBUTTONUP
@@ -36,7 +36,7 @@ function Menu($keys) {
 }
 function Swipe { & $adb shell input swipe 900 700 1500 1000 250; Start-Sleep -Milliseconds 400 }
 
-Get-Process FreeDisplay,FreeDisplayHost -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process Tandem,TandemHost -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Milliseconds 500
 Start-Process $exe
 "1. started:             " + (Wait-Log "Encoder:")
@@ -63,8 +63,8 @@ Menu @("v", "b")
 
 $n = LineCount
 Menu @("q")
-"5. quit:                " + (Wait-Log "FreeDisplay host stopped" $n 15)
+"5. quit:                " + (Wait-Log "Tandem host stopped" $n 15)
 Start-Sleep -Milliseconds 500
-"   process still running: " + [bool](Get-Process FreeDisplay,FreeDisplayHost -ErrorAction SilentlyContinue)
+"   process still running: " + [bool](Get-Process Tandem,TandemHost -ErrorAction SilentlyContinue)
 "--- input counters per session:"
 Get-Content $log | Select-String "Input this session" | ForEach-Object { "   " + $_.Line }

@@ -1,4 +1,4 @@
-// FreeDisplay host: streams a Windows monitor to an Android tablet over USB (adb)
+// Tandem host: streams a Windows monitor to an Android tablet over USB (adb)
 // and injects the tablet's touch and pen input back into Windows.
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -31,7 +31,7 @@ namespace {
 
 constexpr const wchar_t* kPackage = L"com.freedisplay.client";
 constexpr const wchar_t* kActivity = L"com.freedisplay.client/.MainActivity";
-constexpr int kAppVersionCode = 11; // keep in sync with android/app/build.gradle.kts
+constexpr int kAppVersionCode = 12; // keep in sync with android/app/build.gradle.kts
 
 struct Options {
     int display = -1;     // -1: auto (VDD monitor, else primary)
@@ -166,9 +166,9 @@ bool PrepareDevice(const Adb& adb, const std::string& serial, const Options& opt
     if (opt.install) {
         int installed = InstalledVersionCode(adb, serial);
         if (installed != kAppVersionCode) {
-            std::wstring apk = installer::PayloadDir() + L"FreeDisplay.apk";
+            std::wstring apk = installer::PayloadDir() + L"Tandem.apk";
             if (GetFileAttributesW(apk.c_str()) == INVALID_FILE_ATTRIBUTES) {
-                Log("FreeDisplay.apk not found; install the tablet app manually");
+                Log("Tandem.apk not found; install the tablet app manually");
             } else {
                 Log("Installing tablet app (installed version %d, need %d)...", installed, kAppVersionCode);
                 std::string out;
@@ -522,7 +522,7 @@ bool SuperDisplayRunning() {
 // Detects the tablet, prepares it and runs streaming sessions until g_quit.
 void HostLoop(Options opt) {
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    Log("FreeDisplay host starting. Displays:");
+    Log("Tandem host starting. Displays:");
     PrintOutputs();
 
     Adb adb;
@@ -714,10 +714,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
             return 0;
         } else {
             if (!stdoutRedirected) AttachParentConsole();
-            printf("Usage: FreeDisplay [--console] [--list] [--display N] [--fps N] [--bitrate Mbps]\n"
+            printf("Usage: Tandem [--console] [--list] [--display N] [--fps N] [--bitrate Mbps]\n"
                    "                   [--scale PERCENT] [--speed 0-100] [--encoder auto|amf|nvenc|mf]\n"
                    "                   [--no-install]\n"
-                   "       FreeDisplay --install|--uninstall [--quiet]\n"
+                   "       Tandem --install|--uninstall [--quiet]\n"
                    "Runs in the notification area; --console also shows the log in a console window.\n");
             return 1;
         }
@@ -729,16 +729,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     if (!installer::RunningInPlace() && !console && !stdoutRedirected) {
         // Started from a download: offer to install, or just run from a cache.
         int choice = MessageBoxW(nullptr,
-                                 L"Install FreeDisplay on this PC?\n\n"
+                                 L"Install Tandem on this PC?\n\n"
                                  L"Yes:  install for your user (Start menu shortcut, starts with Windows)\n"
                                  L"No:  just run it this time\n\n"
                                  L"No administrator rights are needed.",
-                                 L"FreeDisplay", MB_YESNOCANCEL | MB_ICONQUESTION | MB_SETFOREGROUND);
+                                 L"Tandem", MB_YESNOCANCEL | MB_ICONQUESTION | MB_SETFOREGROUND);
         if (choice == IDYES) return installer::Install(false, true) ? 0 : 1;
         if (choice != IDNO) return 0;
     }
     if (!installer::RunningInPlace() && !installer::PreparePortable()) {
-        MessageBoxW(nullptr, L"FreeDisplay could not unpack its files.", L"FreeDisplay", MB_ICONERROR);
+        MessageBoxW(nullptr, L"Tandem could not unpack its files.", L"Tandem", MB_ICONERROR);
         return 1;
     }
 
@@ -749,18 +749,19 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         SetConsoleCtrlHandler(OnCtrl, TRUE);
     }
 
-    HANDLE single = CreateMutexW(nullptr, TRUE, L"Local\\FreeDisplayHost");
+    HANDLE single = CreateMutexW(nullptr, TRUE, L"Local\\TandemHost");
+    installer::RemoveFreeDisplay(); // the previous name of this app; both would compete for the tablet
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         // Started again (Start menu, desktop): bring up the running copy's settings window.
-        HWND tray = FindWindowW(L"FreeDisplayTray", nullptr);
+        HWND tray = FindWindowW(L"TandemTray", nullptr);
         if (tray) {
             DWORD pid = 0;
             GetWindowThreadProcessId(tray, &pid);
             AllowSetForegroundWindow(pid);
             PostMessageW(tray, kShowSettingsMsg, 0, 0);
         } else if (!stdoutRedirected && !console) {
-            MessageBoxW(nullptr, L"FreeDisplay is already running. Look for its icon in the notification area.",
-                        L"FreeDisplay", MB_ICONINFORMATION);
+            MessageBoxW(nullptr, L"Tandem is already running. Look for its icon in the notification area.",
+                        L"Tandem", MB_ICONINFORMATION);
         }
         return 0;
     }
@@ -795,7 +796,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
             CloseHandle(pi.hThread);
             CloseHandle(pi.hProcess);
-            Log("Restarting FreeDisplay");
+            Log("Restarting Tandem");
         }
         g_quit = true;
         PostQuitMessage(0);
@@ -817,7 +818,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     timeEndPeriod(1);
     WSACleanup();
     MFShutdown();
-    Log("FreeDisplay host stopped");
+    Log("Tandem host stopped");
     if (g_logFile) fclose(g_logFile);
     if (single) CloseHandle(single);
     return 0;

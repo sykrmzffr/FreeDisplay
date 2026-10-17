@@ -1,11 +1,11 @@
 #include <winres.h>
 #include "../src/Resources.h"
 
-IDI_APP ICON "FreeDisplay.ico"
-1 RT_MANIFEST "FreeDisplay.manifest"
+IDI_APP ICON "Tandem.ico"
+1 RT_MANIFEST "Tandem.manifest"
 
 // Payload prepared by build.bat in out\payload.
-IDR_APK          RCDATA "../out/payload/FreeDisplay.apk"
+IDR_APK          RCDATA "../out/payload/Tandem.apk"
 IDR_ADB          RCDATA "../out/payload/adb.exe"
 IDR_ADBWINAPI    RCDATA "../out/payload/AdbWinApi.dll"
 IDR_ADBWINUSBAPI RCDATA "../out/payload/AdbWinUsbApi.dll"
@@ -30,12 +30,12 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "CompanyName", "FreeDisplay"
-            VALUE "FileDescription", "FreeDisplay - use an Android tablet as a second monitor"
+            VALUE "CompanyName", "Tandem"
+            VALUE "FileDescription", "Tandem - use an Android tablet as a second monitor"
             VALUE "FileVersion", FD_VERSION_STR
-            VALUE "InternalName", "FreeDisplay"
-            VALUE "OriginalFilename", "FreeDisplay.exe"
-            VALUE "ProductName", "FreeDisplay"
+            VALUE "InternalName", "Tandem"
+            VALUE "OriginalFilename", "Tandem.exe"
+            VALUE "ProductName", "Tandem"
             VALUE "ProductVersion", FD_VERSION_STR
         END
     END

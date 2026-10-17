@@ -4,11 +4,11 @@ param([string[]]$Configs = @("", "--speed 0", "--speed 0 --scale 75", "--speed 0
 
 $out = Join-Path $PSScriptRoot "..\out"
 foreach ($cfg in $Configs) {
-    Get-Process FreeDisplay,FreeDisplayHost -ErrorAction SilentlyContinue | Stop-Process -Force
+    Get-Process Tandem,TandemHost -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Milliseconds 500
     $log = Join-Path $env:TEMP "fd_bench.log"
     $argList = @("--no-install") + ($cfg -split ' ' | Where-Object { $_ })
-    $p = Start-Process (Join-Path $out "FreeDisplay.exe") -ArgumentList $argList -RedirectStandardOutput $log -NoNewWindow -PassThru
+    $p = Start-Process (Join-Path $out "Tandem.exe") -ArgumentList $argList -RedirectStandardOutput $log -NoNewWindow -PassThru
     for ($i = 0; $i -lt 40 -and -not (Select-String -Path $log -Pattern "Tablet decoder" -Quiet -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Milliseconds 500 }
     & (Join-Path $out "animate.exe") 1 17
     Stop-Process -Id $p.Id -Force

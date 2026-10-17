@@ -1,9 +1,10 @@
-# FreeDisplay
+# Tandem
 
 Use an Android tablet as a second monitor for Windows over a USB cable, with
-touch and pen input. Free and built from our own code.
+touch and pen input. Free and built from our own code. (Formerly called
+FreeDisplay; installing Tandem replaces it and keeps your settings.)
 
-FreeDisplay is a vibe-coded project: it was built through AI-assisted
+Tandem is a vibe-coded project: it was built through AI-assisted
 development, and every feature was tested on real hardware (an AMD laptop and a
 Xiaomi tablet). See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
@@ -31,46 +32,46 @@ and starts streaming. Wire format: [PROTOCOL.md](PROTOCOL.md).
 
 ## Quick start (download from GitHub)
 
-1. Open the [latest release](https://github.com/sykrmzffr/FreeDisplay/releases/latest)
-   and download **FreeDisplay.exe**. (The **FreeDisplay.apk** there is only needed
+1. Open the [latest release](https://github.com/sykrmzffr/Tandem/releases/latest)
+   and download **Tandem.exe**. (The **Tandem.apk** there is only needed
    to install the tablet app by hand; the PC app installs it for you.)
-2. Run `FreeDisplay.exe`. Windows SmartScreen may say it "protected your PC"
+2. Run `Tandem.exe`. Windows SmartScreen may say it "protected your PC"
    because the program is new and unsigned: click **More info > Run anyway**.
 3. Choose **Yes** to install. When it offers the extra-screen driver, choose
    **Yes** and allow the administrator prompt, then restart the PC when asked.
 4. On the tablet, turn on USB debugging (see [Set up the tablet](#set-up-the-tablet-once)).
-5. Plug the tablet in and tap **Allow** on its USB debugging prompt. FreeDisplay
+5. Plug the tablet in and tap **Allow** on its USB debugging prompt. Tandem
    installs and opens its tablet app, and the tablet becomes a second screen.
 6. Arrange the screen in **Windows Settings > System > Display**, and click the
-   FreeDisplay tray icon for settings.
+   Tandem tray icon for settings.
 
-The first time you use a tablet whose resolution FreeDisplay has not seen, the
-picture is scaled to fit and FreeDisplay asks you to restart Windows once; after
+The first time you use a tablet whose resolution Tandem has not seen, the
+picture is scaled to fit and Tandem asks you to restart Windows once; after
 that the screen matches the tablet pixel for pixel.
 
 ## Install (Windows)
 
-1. Run `FreeDisplay.exe` and choose **Yes**. It installs for your user into
-   `%LOCALAPPDATA%\Programs\FreeDisplay`, adds a Start menu shortcut and an
+1. Run `Tandem.exe` and choose **Yes**. It installs for your user into
+   `%LOCALAPPDATA%\Programs\Tandem`, adds a Start menu shortcut and an
    Apps & Features entry, and starts with Windows. Choose **No** to run it once
    without installing.
 2. If [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver)
-   (which creates the extra screen) is missing, FreeDisplay offers to install
+   (which creates the extra screen) is missing, Tandem offers to install
    the copy it includes. Windows asks for administrator permission once, then
-   you restart the PC. Without the driver, FreeDisplay mirrors the main screen.
-3. FreeDisplay now runs in the notification area (tray).
+   you restart the PC. Without the driver, Tandem mirrors the main screen.
+3. Tandem now runs in the notification area (tray).
 
 The included driver gets a settings file (`C:\VirtualDisplayDriver\vdd_settings.xml`)
 with common screen shapes (16:9, 20:9, 16:10, 4:3, 3:2) in landscape and portrait
-at 60 and 120 Hz. When a tablet's exact resolution is missing, FreeDisplay adds
+at 60 and 120 Hz. When a tablet's exact resolution is missing, Tandem adds
 it (keeping the last two tablets' sizes; the driver only handles about 48 modes)
 and asks for one restart; until then it scales the closest shape. A driver you
 installed yourself, with your own settings file, is used as it is.
 
-Silent options: `FreeDisplay.exe --install --quiet` (skips the driver),
-`FreeDisplay.exe --uninstall --quiet`. Uninstall normally from
-**Settings > Apps > Installed apps > FreeDisplay**; it offers to remove the
-driver too if FreeDisplay installed it.
+Silent options: `Tandem.exe --install --quiet` (skips the driver),
+`Tandem.exe --uninstall --quiet`. Uninstall normally from
+**Settings > Apps > Installed apps > Tandem**; it offers to remove the
+driver too if Tandem installed it.
 
 ## Set up the tablet (once)
 
@@ -82,9 +83,9 @@ driver too if FreeDisplay installed it.
 3. Plug the tablet into the PC and tap **Allow** on the USB debugging prompt
    (tick "Always allow from this computer").
 
-FreeDisplay then installs its tablet app by itself and opens it. After that,
+Tandem then installs its tablet app by itself and opens it. After that,
 plugging in the cable is all it takes. To install the tablet app by hand,
-copy `FreeDisplay.apk` (from the release, or `dist\tablet\` when building) to
+copy `Tandem.apk` (from the release, or `dist\tablet\` when building) to
 the tablet and open it.
 
 If the tablet is not detected: try another cable or USB port, make sure the
@@ -93,7 +94,7 @@ Some brands (e.g. Samsung) need their USB driver on Windows for USB debugging.
 
 ## Use
 
-Click the tray icon (or start FreeDisplay again from the Start menu) for the
+Click the tray icon (or start Tandem again from the Start menu) for the
 settings window; right-click it for the same options as a menu, plus **Quit**:
 
 - **Touch input / Pen input**: turn tablet input on or off (applies instantly).
@@ -106,7 +107,7 @@ settings window; right-click it for the same options as a menu, plus **Quit**:
   On Xiaomi tablets, set **Settings > Display > Refresh rate** to 120 Hz, or
   the system limits apps to 90 Hz.
 - **Turn off the tablet screen when it disconnects** (on by default): when the
-  cable is unplugged, or the tablet app is closed for 3 seconds, FreeDisplay
+  cable is unplugged, or the tablet app is closed for 3 seconds, Tandem
   switches Windows to "PC screen only" (as Win+P does), so the extra screen is
   gone and windows and the pointer stay on the main screen. Plugging the tablet
   back in restores Extend (or Duplicate). With another monitor attached it only
@@ -122,11 +123,11 @@ settings window; right-click it for the same options as a menu, plus **Quit**:
   use Win+P.
 - **Start with Windows**, **Open log**, **Restart app**.
 
-`FreeDisplay.exe --move-windows-back` does the window move by hand.
+`Tandem.exe --move-windows-back` does the window move by hand.
 
 Arrange the extra monitor in **Windows Settings > System > Display** like any monitor.
 
-Settings: `%APPDATA%\FreeDisplay\settings.ini`. Log: `%APPDATA%\FreeDisplay\host.log`.
+Settings: `%APPDATA%\Tandem\settings.ini`. Log: `%APPDATA%\Tandem\host.log`.
 
 Command-line options for testing: `--console`, `--list`, `--display N`,
 `--fps N`, `--bitrate Mbps`, `--scale PERCENT`, `--encoder auto|amf|nvenc|mf`,
@@ -141,17 +142,17 @@ Needs Visual Studio 2022 C++ build tools, the Android SDK and Android Studio
 .\build-all.ps1
 ```
 
-This builds the tablet app and then `host\out\FreeDisplay.exe`, which has the
+This builds the tablet app and then `host\out\Tandem.exe`, which has the
 tablet app and adb (from SDK platform-tools) embedded. The result is copied to
-`dist\FreeDisplay.exe`; `dist\tablet\FreeDisplay.apk` is for manual installs.
-`host\out\FreeDisplay.exe` runs in place without offering to install, because
-`FreeDisplay.apk` sits next to it.
+`dist\Tandem.exe`; `dist\tablet\Tandem.apk` is for manual installs.
+`host\out\Tandem.exe` runs in place without offering to install, because
+`Tandem.apk` sits next to it.
 
 Official releases sign the tablet app with the project's release key, which is
 kept outside this repository. To sign your own builds, set the Gradle property
 `freedisplay.signing` (for example in `%USERPROFILE%\.gradle\gradle.properties`)
 to a properties file with `storeFile`, `storePassword`, `keyAlias` and
-`keyPassword`; without it, builds use your local debug key. FreeDisplay replaces
+`keyPassword`; without it, builds use your local debug key. Tandem replaces
 a tablet app signed with a different key automatically.
 
 ## Encoder selection
@@ -169,7 +170,7 @@ those fail) -> Media Foundation.
 
 ## License
 
-FreeDisplay is MIT licensed (see [LICENSE](LICENSE)). It is an independent
+Tandem is MIT licensed (see [LICENSE](LICENSE)). It is an independent
 project written from scratch: it contains no code from, and is not affiliated
 with, any commercial second-screen app. It is provided as is, without warranty.
 
@@ -177,10 +178,10 @@ with, any commercial second-screen app. It is provided as is, without warranty.
 
 - `host/third_party/amf`: AMD AMF SDK headers (MIT, see its LICENSE.txt).
 - `host/third_party/nvenc`: NVENC API headers from FFmpeg nv-codec-headers (MIT).
-- `FreeDisplay.exe` bundles `adb` from the Android SDK Platform-Tools (Apache
+- `Tandem.exe` bundles `adb` from the Android SDK Platform-Tools (Apache
   License 2.0, part of the Android Open Source Project); its NOTICE.txt is
   installed next to it in `adb\`.
 - `host/third_party/vdd`: the unmodified, signed Virtual Display Driver package
   (MttVDD 23.40.36.27) by VirtualDrivers / MikeTheTech, MIT license (see its
-  LICENSE.txt, also installed next to the driver). FreeDisplay installs it only
+  LICENSE.txt, also installed next to the driver). Tandem installs it only
   when no copy is present.

@@ -3,7 +3,7 @@
 #include <utility>
 
 // Installs and removes the Virtual Display Driver (MttVDD), which provides the
-// extra monitor. FreeDisplay.exe carries the unmodified, signed driver package
+// extra monitor. Tandem.exe carries the unmodified, signed driver package
 // (host/third_party/vdd). Installing needs admin rights, so the elevated parts
 // run in a second copy of this executable started with a UAC prompt.
 //
@@ -15,26 +15,26 @@ namespace driver {
 // True when a VDD device exists (installed by us or by its own installer).
 bool Present();
 
-// True when FreeDisplay installed the driver and Windows has not restarted since.
+// True when Tandem installed the driver and Windows has not restarted since.
 bool RestartPending();
 
-// True when the driver was installed by FreeDisplay (so uninstalling may remove it).
+// True when the driver was installed by Tandem (so uninstalling may remove it).
 bool InstalledByUs();
 
 // Start an elevated copy (UAC prompt) and wait for it. False if declined or failed.
 bool RunElevatedInstall();
 bool RunElevatedUninstall();
 
-// True when the driver's settings were written by an older FreeDisplay (a file the
+// True when the driver's settings were written by an older Tandem (a file the
 // user made is never touched). New settings take effect after a restart.
 bool SettingsOutdated();
 
-// Rewrites FreeDisplay's driver settings; 0 on success. Works without admin rights
+// Rewrites Tandem's driver settings; 0 on success. Works without admin rights
 // when the folder allows it, else use RunElevatedUpdateSettings (--update-driver-settings).
 int UpdateSettings();
 bool RunElevatedUpdateSettings();
 
-// The virtual monitor resolution FreeDisplay uses for a w x h tablet: its size in
+// The virtual monitor resolution Tandem uses for a w x h tablet: its size in
 // landscape (portrait is offered too), limited to 4096 wide.
 std::pair<int, int> ModeFor(int w, int h);
 

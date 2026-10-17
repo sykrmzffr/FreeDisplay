@@ -168,7 +168,7 @@ class VideoDecoder(
     }
 
     companion object {
-        private const val TAG = "FreeDisplay"
+        private const val TAG = "Tandem"
 
         /**
          * Largest picture with the shape of a [w] x [h] screen that the AVC decoder we

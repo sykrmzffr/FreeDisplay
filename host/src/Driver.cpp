@@ -18,7 +18,8 @@ namespace {
 constexpr const wchar_t* kHardwareId = L"Root\\MttVDD";
 constexpr const wchar_t* kDefaultDir = L"C:\\VirtualDisplayDriver"; // where VDD's own tools look
 constexpr const wchar_t* kVddKey = L"SOFTWARE\\MikeTheTech\\VirtualDisplayDriver";
-constexpr const wchar_t* kOurKey = L"SOFTWARE\\FreeDisplay";
+constexpr const wchar_t* kOurKey = L"SOFTWARE\\Tandem";
+constexpr const wchar_t* kOldKey = L"SOFTWARE\\FreeDisplay"; // written by FreeDisplay, Tandem's former name
 
 // Exit codes of the elevated copy besides Win32 errors.
 constexpr int kErrNoPayload = 0x20000001;
@@ -39,9 +40,10 @@ constexpr int kRefreshRates[] = {60, 120};
 static_assert((std::size(kResolutions) + kMaxLearned) * 2 * (std::size(kRefreshRates) + 1) <= 48,
               "too many display modes for VDD");
 
-// Identifies settings files FreeDisplay wrote. Files without portrait modes (v1)
+// Identifies settings files Tandem wrote. Files without portrait modes (v1)
 // are outdated; a v2 file (fixed list) is kept until a tablet needs a new size.
-constexpr const char* kSettingsMarker = "Written by FreeDisplay";
+constexpr const char* kSettingsMarker = "Written by Tandem";
+constexpr const char* kOldSettingsMarker = "Written by FreeDisplay";
 constexpr const char* kSettingsVersion = "settings v3 (landscape + portrait)";
 constexpr const char* kPortraitTag = "portrait";
 constexpr const char* kLearnedTag = "learned:";
@@ -190,10 +192,11 @@ bool HasMode(const std::string& text, Size s) {
 
 std::wstring SettingsPath() { return InstallDir() + L"\\vdd_settings.xml"; }
 
-// True when a settings file exists that FreeDisplay did not write (never replaced).
+// True when a settings file exists that Tandem did not write (never replaced).
 bool HasOwnSettings(const std::wstring& path) {
     std::string head = ReadHead(path);
-    return !head.empty() && head.find(kSettingsMarker) == std::string::npos;
+    return !head.empty() && head.find(kSettingsMarker) == std::string::npos &&
+           head.find(kOldSettingsMarker) == std::string::npos;
 }
 
 ULONGLONG NowFiletime() {
@@ -279,17 +282,23 @@ bool Present() {
 }
 
 bool InstalledByUs() {
-    DWORD v = 0, size = sizeof v;
-    return RegGetValueW(HKEY_LOCAL_MACHINE, kOurKey, L"InstalledDriver", RRF_RT_REG_DWORD, nullptr, &v, &size) ==
-               ERROR_SUCCESS &&
-           v == 1;
+    for (const wchar_t* k : {kOurKey, kOldKey}) {
+        DWORD v = 0, size = sizeof v;
+        if (RegGetValueW(HKEY_LOCAL_MACHINE, k, L"InstalledDriver", RRF_RT_REG_DWORD, nullptr, &v, &size) ==
+                ERROR_SUCCESS &&
+            v == 1)
+            return true;
+    }
+    return false;
 }
 
 bool RestartPending() {
     ULONGLONG installedAt = 0;
     DWORD size = sizeof installedAt;
     if (RegGetValueW(HKEY_LOCAL_MACHINE, kOurKey, L"DriverInstalledAt", RRF_RT_REG_QWORD, nullptr, &installedAt,
-                     &size) != ERROR_SUCCESS)
+                     &size) != ERROR_SUCCESS &&
+        RegGetValueW(HKEY_LOCAL_MACHINE, kOldKey, L"DriverInstalledAt", RRF_RT_REG_QWORD, nullptr, &installedAt,
+                     &(size = sizeof installedAt)) != ERROR_SUCCESS)
         return false;
     ULONGLONG bootedAt = NowFiletime() - GetTickCount64() * 10000; // FILETIME is in 100 ns units
     return installedAt > bootedAt;
@@ -308,7 +317,7 @@ int Install() {
         !WriteResource(IDR_VDD_LICENSE, base + L"LICENSE-VirtualDisplayDriver.txt"))
         return kErrNoPayload;
     // Write the settings unless the user has their own (ours carry a marker comment,
-    // so a file from an older FreeDisplay gets replaced).
+    // so a file from an older Tandem gets replaced).
     if (!HasOwnSettings(base + L"vdd_settings.xml")) WriteText(base + L"vdd_settings.xml", DefaultSettingsXml());
 
     // Tell the driver (and VDD's own tools) where its settings live.
@@ -317,7 +326,7 @@ int Install() {
     if (RegCreateKeyExW(HKEY_LOCAL_MACHINE, kVddKey, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &key, &disposition) ==
         ERROR_SUCCESS) {
         SetString(key, L"VDDPATH", dir);
-        if (disposition == REG_CREATED_NEW_KEY) SetString(key, L"InstalledBy", L"FreeDisplay");
+        if (disposition == REG_CREATED_NEW_KEY) SetString(key, L"InstalledBy", L"Tandem");
         RegCloseKey(key);
     }
 
@@ -408,7 +417,7 @@ int Uninstall() {
     DWORD size = sizeof by;
     bool ourFolder = RegGetValueW(HKEY_LOCAL_MACHINE, kVddKey, L"InstalledBy", RRF_RT_REG_SZ, nullptr, by, &size) ==
                          ERROR_SUCCESS &&
-                     _wcsicmp(by, L"FreeDisplay") == 0;
+                     (_wcsicmp(by, L"Tandem") == 0 || _wcsicmp(by, L"FreeDisplay") == 0);
     if (ourFolder) {
         std::wstring base = InstallDir() + L"\\";
         for (const wchar_t* f : {L"MttVDD.inf", L"MttVDD.dll", L"MttVDD.cat", L"LICENSE-VirtualDisplayDriver.txt",
@@ -419,6 +428,7 @@ int Uninstall() {
         RegDeleteKeyW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\MikeTheTech"); // only succeeds when empty
     }
     RegDeleteKeyW(HKEY_LOCAL_MACHINE, kOurKey);
+    RegDeleteKeyW(HKEY_LOCAL_MACHINE, kOldKey);
     return 0;
 }
 

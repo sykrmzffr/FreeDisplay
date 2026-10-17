@@ -11,9 +11,9 @@
 namespace installer {
 namespace {
 
-constexpr const wchar_t* kAppName = L"FreeDisplay";
-constexpr const wchar_t* kExeName = L"FreeDisplay.exe";
-constexpr const wchar_t* kUninstallKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\FreeDisplay";
+constexpr const wchar_t* kAppName = L"Tandem";
+constexpr const wchar_t* kExeName = L"Tandem.exe";
+constexpr const wchar_t* kUninstallKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Tandem";
 constexpr const wchar_t* kRunKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 
 struct PayloadFile {
@@ -21,7 +21,7 @@ struct PayloadFile {
     const wchar_t* path; // relative to the payload directory
 };
 constexpr PayloadFile kPayload[] = {
-    {IDR_APK, L"FreeDisplay.apk"},
+    {IDR_APK, L"Tandem.apk"},
     {IDR_ADB, L"adb\\adb.exe"},
     {IDR_ADBWINAPI, L"adb\\AdbWinApi.dll"},
     {IDR_ADBWINUSBAPI, L"adb\\AdbWinUsbApi.dll"},
@@ -44,7 +44,7 @@ std::wstring SelfPath() {
     return path;
 }
 
-std::wstring ShortcutPath() { return KnownFolder(FOLDERID_Programs) + L"\\FreeDisplay.lnk"; }
+std::wstring ShortcutPath() { return KnownFolder(FOLDERID_Programs) + L"\\Tandem.lnk"; }
 
 bool FileExists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; }
 
@@ -188,14 +188,14 @@ void Message(bool quiet, const std::wstring& text, UINT icon) {
 
 } // namespace
 
-std::wstring InstallDir() { return KnownFolder(FOLDERID_UserProgramFiles) + L"\\FreeDisplay\\"; }
+std::wstring InstallDir() { return KnownFolder(FOLDERID_UserProgramFiles) + L"\\Tandem\\"; }
 
 const std::wstring& PayloadDir() {
     if (g_payloadDir.empty()) g_payloadDir = ExeDir();
     return g_payloadDir;
 }
 
-bool RunningInPlace() { return FileExists(ExeDir() + L"FreeDisplay.apk"); }
+bool RunningInPlace() { return FileExists(ExeDir() + L"Tandem.apk"); }
 
 bool ExtractPayload(const std::wstring& dir) {
     SHCreateDirectoryExW(nullptr, (dir + L"adb").c_str(), nullptr);
@@ -226,21 +226,22 @@ bool ExtractPayload(const std::wstring& dir) {
 }
 
 bool PreparePortable() {
-    std::wstring dir = KnownFolder(FOLDERID_LocalAppData) + L"\\FreeDisplay\\portable\\";
+    std::wstring dir = KnownFolder(FOLDERID_LocalAppData) + L"\\Tandem\\portable\\";
     if (!ExtractPayload(dir)) return false;
     g_payloadDir = dir;
     return true;
 }
 
-bool StopRunningInstance(DWORD timeoutMs) {
-    HWND hwnd = FindWindowW(L"FreeDisplayTray", nullptr);
+namespace {
+bool StopInstance(const wchar_t* trayClass, const wchar_t* mutexName, DWORD timeoutMs) {
+    HWND hwnd = FindWindowW(trayClass, nullptr);
     if (!hwnd) {
         // No tray window: either nothing is running or it has no icon yet.
-        HANDLE m = OpenMutexW(SYNCHRONIZE, FALSE, L"Local\\FreeDisplayHost");
+        HANDLE m = OpenMutexW(SYNCHRONIZE, FALSE, mutexName);
         if (!m) return true;
         CloseHandle(m);
         Sleep(1000);
-        hwnd = FindWindowW(L"FreeDisplayTray", nullptr);
+        hwnd = FindWindowW(trayClass, nullptr);
         if (!hwnd) return false;
     }
     DWORD pid = 0;
@@ -250,7 +251,7 @@ bool StopRunningInstance(DWORD timeoutMs) {
     PostMessageW(hwnd, kQuitMsg, 0, 0);
     if (!proc) {
         Sleep(2000);
-        return !FindWindowW(L"FreeDisplayTray", nullptr);
+        return !FindWindowW(trayClass, nullptr);
     }
     bool stopped = WaitForSingleObject(proc, timeoutMs) == WAIT_OBJECT_0;
     if (!stopped) {
@@ -261,12 +262,33 @@ bool StopRunningInstance(DWORD timeoutMs) {
     CloseHandle(proc);
     return stopped;
 }
+} // namespace
+
+bool StopRunningInstance(DWORD timeoutMs) { return StopInstance(L"TandemTray", L"Local\\TandemHost", timeoutMs); }
+
+void RemoveFreeDisplay() {
+    StopInstance(L"FreeDisplayTray", L"Local\\FreeDisplayHost", 5000);
+    std::wstring dir = KnownFolder(FOLDERID_UserProgramFiles) + L"\\FreeDisplay\\";
+    if (!FileExists(dir + L"FreeDisplay.exe")) return;
+    Log("Installer: removing FreeDisplay, the previous name of this app");
+    HKEY key;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
+        RegDeleteValueW(key, L"FreeDisplay");
+        RegCloseKey(key);
+    }
+    RegDeleteTreeW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\FreeDisplay");
+    DeleteFileW((KnownFolder(FOLDERID_Programs) + L"\\FreeDisplay.lnk").c_str());
+    KillAdbServer(dir);
+    DeleteTree(dir);
+    DeleteTree(KnownFolder(FOLDERID_LocalAppData) + L"\\FreeDisplay\\");
+}
 
 bool Install(bool quiet, bool launch) {
     std::wstring dir = InstallDir();
     std::wstring exe = dir + kExeName;
+    RemoveFreeDisplay();
     if (!StopRunningInstance()) {
-        Message(quiet, L"FreeDisplay is running and could not be closed. Quit it from its icon in the "
+        Message(quiet, L"Tandem is running and could not be closed. Quit it from its icon in the "
                        L"notification area, then try again.", MB_ICONWARNING);
         return false;
     }
@@ -278,7 +300,7 @@ bool Install(bool quiet, bool launch) {
         ok = ReadWholeFile(SelfPath(), self) && WriteFileReplacing(exe, self.data(), self.size());
     }
     if (!ok) {
-        Message(quiet, L"Could not copy FreeDisplay into\n" + dir + L"\n\nSee whether another program is using it.",
+        Message(quiet, L"Could not copy Tandem into\n" + dir + L"\n\nSee whether another program is using it.",
                 MB_ICONERROR);
         return false;
     }
@@ -303,7 +325,7 @@ bool Install(bool quiet, bool launch) {
 
     // Start with Windows by default; the tray menu can turn it off.
     if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
-        SetString(key, L"FreeDisplay", L"\"" + exe + L"\"");
+        SetString(key, L"Tandem", L"\"" + exe + L"\"");
         RegCloseKey(key);
     }
     Settings& s = AppSettings();
@@ -316,8 +338,8 @@ bool Install(bool quiet, bool launch) {
     if (!quiet && !driver::Present()) {
         int choice = MessageBoxW(
             nullptr,
-            L"FreeDisplay needs Virtual Display Driver to create the extra screen for your tablet. It is free "
-            L"and open source, and it is included with FreeDisplay.\n\n"
+            L"Tandem needs Virtual Display Driver to create the extra screen for your tablet. It is free "
+            L"and open source, and it is included with Tandem.\n\n"
             L"Windows will ask for permission to install it. Install it now?",
             kAppName, MB_OKCANCEL | MB_ICONINFORMATION | MB_SETFOREGROUND);
         if (choice == IDOK) {
@@ -325,14 +347,14 @@ bool Install(bool quiet, bool launch) {
                 restartNeeded = true;
             } else {
                 Message(false,
-                        L"Virtual Display Driver was not installed. FreeDisplay will mirror your main screen "
+                        L"Virtual Display Driver was not installed. Tandem will mirror your main screen "
                         L"instead of extending it. Run this installer again to retry.",
                         MB_ICONWARNING);
             }
         }
     }
 
-    // An older FreeDisplay wrote driver settings without portrait resolutions.
+    // An older Tandem wrote driver settings without portrait resolutions.
     bool settingsUpdated = false;
     if (driver::Present() && driver::SettingsOutdated()) {
         settingsUpdated = driver::UpdateSettings() == 0 || (!quiet && driver::RunElevatedUpdateSettings());
@@ -340,7 +362,7 @@ bool Install(bool quiet, bool launch) {
     }
     if (settingsUpdated && !restartNeeded && !quiet) {
         Message(false,
-                L"FreeDisplay updated the extra screen's settings (portrait mode). They take effect after "
+                L"Tandem updated the extra screen's settings (portrait mode). They take effect after "
                 L"your next restart; until then the tablet works in landscape as before.",
                 MB_ICONINFORMATION);
     }
@@ -349,7 +371,7 @@ bool Install(bool quiet, bool launch) {
         // The new monitor is only safe to capture after a restart (see Driver.h).
         if (!quiet &&
             MessageBoxW(nullptr,
-                        L"Almost done: restart your PC to finish setting up the extra screen. FreeDisplay starts "
+                        L"Almost done: restart your PC to finish setting up the extra screen. Tandem starts "
                         L"by itself after the restart.\n\nRestart now?",
                         kAppName, MB_YESNO | MB_ICONINFORMATION | MB_SETFOREGROUND) == IDYES &&
             !driver::RestartWindows())
@@ -359,7 +381,7 @@ bool Install(bool quiet, bool launch) {
 
     if (launch) RunHidden(L"\"" + exe + L"\"", 0, dir.c_str());
     Message(quiet,
-            L"FreeDisplay is installed and running - look for its icon in the notification area.\n\n"
+            L"Tandem is installed and running - look for its icon in the notification area.\n\n"
             L"On the tablet, turn on USB debugging (Developer options), then plug it into this PC "
             L"and allow the USB debugging prompt. The tablet app installs itself the first time.",
             MB_ICONINFORMATION);
@@ -367,37 +389,37 @@ bool Install(bool quiet, bool launch) {
 }
 
 bool Uninstall(bool quiet) {
-    if (!quiet && MessageBoxW(nullptr, L"Remove FreeDisplay from this PC?\n\n(The app on your tablet is left as is.)",
+    if (!quiet && MessageBoxW(nullptr, L"Remove Tandem from this PC?\n\n(The app on your tablet is left as is.)",
                               kAppName, MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND) != IDYES)
         return false;
 
     std::wstring dir = InstallDir();
     if (!StopRunningInstance()) {
-        Message(quiet, L"FreeDisplay is running and could not be closed. Quit it from its icon in the "
+        Message(quiet, L"Tandem is running and could not be closed. Quit it from its icon in the "
                        L"notification area, then try again.", MB_ICONWARNING);
         return false;
     }
     KillAdbServer(dir);
-    KillAdbServer(KnownFolder(FOLDERID_LocalAppData) + L"\\FreeDisplay\\portable\\");
+    KillAdbServer(KnownFolder(FOLDERID_LocalAppData) + L"\\Tandem\\portable\\");
 
-    // Remove the driver only if FreeDisplay installed it, and ask, since other apps may
+    // Remove the driver only if Tandem installed it, and ask, since other apps may
     // use it. Done before deleting files: the elevated step runs from this executable.
     if (!quiet && driver::InstalledByUs() &&
         MessageBoxW(nullptr,
-                    L"Also remove Virtual Display Driver, which FreeDisplay installed?\n\n"
+                    L"Also remove Virtual Display Driver, which Tandem installed?\n\n"
                     L"Choose No if other apps (for example game streaming) use the virtual screen.",
                     kAppName, MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND) == IDYES)
         driver::RunElevatedUninstall();
 
     HKEY key;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
-        RegDeleteValueW(key, L"FreeDisplay");
+        RegDeleteValueW(key, L"Tandem");
         RegCloseKey(key);
     }
     RegDeleteKeyW(HKEY_CURRENT_USER, kUninstallKey);
     DeleteFileW(ShortcutPath().c_str());
     DeleteTree(Settings::DataDir());
-    DeleteTree(KnownFolder(FOLDERID_LocalAppData) + L"\\FreeDisplay\\");
+    DeleteTree(KnownFolder(FOLDERID_LocalAppData) + L"\\Tandem\\");
 
     // The running executable cannot delete itself; let a short-lived cmd finish the job.
     bool removingSelf = SamePath(SelfPath(), dir + kExeName);
@@ -411,7 +433,7 @@ bool Uninstall(bool quiet) {
         RunHidden(L"\"" + std::wstring(comspec) + L"\" /c ping -n 3 127.0.0.1 >nul & rmdir /s /q \"" + target + L"\"",
                   0, tempDir.c_str());
     }
-    Message(quiet, L"FreeDisplay has been removed.", MB_ICONINFORMATION);
+    Message(quiet, L"Tandem has been removed.", MB_ICONINFORMATION);
     return true;
 }
 

@@ -1,4 +1,4 @@
-﻿# Builds everything and puts the single distributable FreeDisplay.exe in dist\.
+﻿# Builds everything and puts the single distributable Tandem.exe in dist\.
 #   1. the tablet app (Gradle, needs JDK 17+ - Android Studio's bundled JBR works)
 #   2. the Windows app with the tablet app and adb embedded (needs VS 2022 C++ tools)
 $ErrorActionPreference = "Continue" # native tools write warnings to stderr; exit codes are checked
@@ -31,7 +31,7 @@ if ($LASTEXITCODE) { throw "Host build failed" }
 # The APK goes in a subfolder: next to the exe it would make the exe run in place
 # instead of offering to install. It is only needed for installing by hand.
 New-Item -ItemType Directory -Force "$root\dist\tablet" | Out-Null
-Copy-Item "$root\host\out\FreeDisplay.exe" "$root\dist\FreeDisplay.exe" -Force
-Copy-Item "$root\host\out\payload\FreeDisplay.apk" "$root\dist\tablet\FreeDisplay.apk" -Force
-$exe = Get-Item "$root\dist\FreeDisplay.exe"
-Write-Host ("== Done: {0} ({1:N1} MB) and dist\tablet\FreeDisplay.apk" -f $exe.FullName, ($exe.Length / 1MB))
+Copy-Item "$root\host\out\Tandem.exe" "$root\dist\Tandem.exe" -Force
+Copy-Item "$root\host\out\payload\Tandem.apk" "$root\dist\tablet\Tandem.apk" -Force
+$exe = Get-Item "$root\dist\Tandem.exe"
+Write-Host ("== Done: {0} ({1:N1} MB) and dist\tablet\Tandem.apk" -f $exe.FullName, ($exe.Length / 1MB))

@@ -1,6 +1,6 @@
-# Draws the FreeDisplay icon (a tablet with a blue screen next to a small monitor
+# Draws the Tandem icon (a tablet with a blue screen next to a small monitor
 # base) and writes a multi-resolution .ico with PNG-compressed images.
-param([string]$Out = (Join-Path $PSScriptRoot "..\res\FreeDisplay.ico"))
+param([string]$Out = (Join-Path $PSScriptRoot "..\res\Tandem.ico"))
 Add-Type -AssemblyName System.Drawing
 
 function Draw([int]$n) {

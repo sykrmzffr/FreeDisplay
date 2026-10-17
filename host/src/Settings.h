@@ -2,7 +2,7 @@
 #include <atomic>
 #include <string>
 
-// User preferences, persisted in %APPDATA%\FreeDisplay\settings.ini and shared
+// User preferences, persisted in %APPDATA%\Tandem\settings.ini and shared
 // between the tray menu (UI thread) and the streaming thread.
 struct Settings {
     std::atomic<bool> touch{true};          // inject finger input
@@ -24,7 +24,7 @@ struct Settings {
     // Adds or removes the HKCU Run entry that starts the host at sign-in.
     static bool ApplyStartWithWindows(bool enable);
 
-    static std::wstring DataDir(); // %APPDATA%\FreeDisplay, created on demand
+    static std::wstring DataDir(); // %APPDATA%\Tandem, created on demand
 };
 
 Settings& AppSettings();

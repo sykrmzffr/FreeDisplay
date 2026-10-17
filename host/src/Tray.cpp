@@ -93,17 +93,17 @@ bool Tray::Create(HINSTANCE inst, Callbacks cb) {
     WNDCLASSW wc{};
     wc.lpfnWndProc = WndProc;
     wc.hInstance = inst;
-    wc.lpszClassName = L"FreeDisplayTray";
+    wc.lpszClassName = L"TandemTray";
     RegisterClassW(&wc);
     // A message-only window would not receive the taskbar's re-create broadcast.
-    hwnd_ = CreateWindowExW(0, wc.lpszClassName, L"FreeDisplay", 0, 0, 0, 0, 0, nullptr, nullptr, inst, this);
+    hwnd_ = CreateWindowExW(0, wc.lpszClassName, L"Tandem", 0, 0, 0, 0, 0, nullptr, nullptr, inst, this);
     if (!hwnd_) return false;
     SetWindowLongPtrW(hwnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 
     WNDCLASSEXW sc{sizeof sc};
     sc.lpfnWndProc = SettingsProc;
     sc.hInstance = inst;
-    sc.lpszClassName = L"FreeDisplaySettings";
+    sc.lpszClassName = L"TandemSettings";
     sc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     sc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
     LoadIconMetric(inst, MAKEINTRESOURCEW(IDI_APP), LIM_LARGE, &sc.hIcon);
@@ -117,7 +117,7 @@ bool Tray::Create(HINSTANCE inst, Callbacks cb) {
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
     nid.uCallbackMessage = kTrayMsg;
     nid.hIcon = icon_;
-    wcscpy_s(nid.szTip, L"FreeDisplay");
+    wcscpy_s(nid.szTip, L"Tandem");
     if (!Shell_NotifyIconW(NIM_ADD, &nid)) return false;
     nid.uVersion = NOTIFYICON_VERSION_4;
     Shell_NotifyIconW(NIM_SETVERSION, &nid);
@@ -167,11 +167,11 @@ void Tray::ApplyStatus() {
     nid.hWnd = hwnd_;
     nid.uID = kIconId;
     nid.uFlags = NIF_TIP | NIF_SHOWTIP;
-    std::wstring tip = L"FreeDisplay - " + status;
+    std::wstring tip = L"Tandem - " + status;
     wcsncpy_s(nid.szTip, tip.c_str(), _TRUNCATE);
     if (notify) {
         nid.uFlags |= NIF_INFO;
-        wcscpy_s(nid.szInfoTitle, L"FreeDisplay");
+        wcscpy_s(nid.szInfoTitle, L"Tandem");
         wcsncpy_s(nid.szInfo, status.c_str(), _TRUNCATE);
         nid.dwInfoFlags = NIIF_INFO | NIIF_NOSOUND;
     }
@@ -235,8 +235,8 @@ void Tray::ShowMenu() {
     AppendMenuW(menu, MF_STRING | (s.startWithWindows ? MF_CHECKED : 0), kIdAutostart, L"Start with &Windows");
     AppendMenuW(menu, MF_STRING, kIdLog, L"Open &log");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kIdRestart, L"&Restart FreeDisplay");
-    AppendMenuW(menu, MF_STRING, kIdQuit, L"&Quit FreeDisplay");
+    AppendMenuW(menu, MF_STRING, kIdRestart, L"&Restart Tandem");
+    AppendMenuW(menu, MF_STRING, kIdQuit, L"&Quit Tandem");
 
     POINT pt;
     GetCursorPos(&pt);
@@ -286,7 +286,7 @@ void Tray::ShowSettings() {
         SetForegroundWindow(settings_);
         return;
     }
-    settings_ = CreateWindowExW(0, L"FreeDisplaySettings", L"FreeDisplay settings",
+    settings_ = CreateWindowExW(0, L"TandemSettings", L"Tandem settings",
                                 WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
                                 400, 400, nullptr, nullptr, inst_, this);
     if (!settings_) return;
@@ -294,7 +294,7 @@ void Tray::ShowSettings() {
         CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, 0, 0, 10, 10, settings_,
                         reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), inst_, nullptr);
     };
-    add(L"STATIC", L"FreeDisplay", SS_LEFT, kCtlTitle);
+    add(L"STATIC", L"Tandem", SS_LEFT, kCtlTitle);
     add(L"STATIC", L"Version " FD_VERSION_WSTR, SS_RIGHT, kCtlVersion);
     add(L"STATIC", L"", SS_LEFT | SS_NOPREFIX, kCtlStatus);
     add(L"STATIC", L"Tablet input", SS_LEFT, kCtlInputLabel);
@@ -519,7 +519,7 @@ LRESULT CALLBACK Tray::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (self->cb_.onDisplayChanged) self->cb_.onDisplayChanged();
             return 0;
         }
-        if (msg == kShowSettingsMsg) { // FreeDisplay was started again (e.g. from the Start menu)
+        if (msg == kShowSettingsMsg) { // Tandem was started again (e.g. from the Start menu)
             self->ShowSettings();
             return 0;
         }
@@ -535,7 +535,7 @@ LRESULT CALLBACK Tray::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
             nid.uCallbackMessage = kTrayMsg;
             nid.hIcon = self->icon_;
-            wcscpy_s(nid.szTip, L"FreeDisplay");
+            wcscpy_s(nid.szTip, L"Tandem");
             Shell_NotifyIconW(NIM_ADD, &nid);
             nid.uVersion = NOTIFYICON_VERSION_4;
             Shell_NotifyIconW(NIM_SETVERSION, &nid);

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity type="win32" name="FreeDisplay.Host" version="1.3.0.0" processorArchitecture="amd64"/>
-  <description>FreeDisplay</description>
+  <assemblyIdentity type="win32" name="Tandem.Host" version="1.3.0.0" processorArchitecture="amd64"/>
+  <description>Tandem</description>
   <!-- Per-user app: never ask for admin, even though the file may be named like an installer. -->
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>

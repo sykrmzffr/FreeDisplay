@@ -1,4 +1,4 @@
-# FreeDisplay wire protocol (v2)
+# Tandem wire protocol (v2)
 
 Transport: one TCP connection. The tablet app listens nowhere; it connects to
 `127.0.0.1:27184`, which `adb reverse tcp:27184 tcp:27184` tunnels to the

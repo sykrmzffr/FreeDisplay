@@ -1,6 +1,6 @@
 // Diagnostic: injects taps with several Windows input APIs at the centre of a
 // monitor and logs which ones reach a test window covering that monitor.
-// Usage: touchtest <displayIndex>   (index as printed by FreeDisplay --list)
+// Usage: touchtest <displayIndex>   (index as printed by Tandem --list)
 #include <windows.h>
 #include <cstdio>
 #include <thread>

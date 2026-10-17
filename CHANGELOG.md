@@ -1,8 +1,14 @@
 # Changelog
 
-All notable changes to FreeDisplay. Versions follow [Semantic Versioning](https://semver.org/).
+All notable changes to Tandem (called FreeDisplay up to version 1.2.0). Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [1.3.0] - 2026-10-17
+
+### Changed
+- **FreeDisplay is now Tandem.** New name, same app. Installing Tandem closes
+  and removes FreeDisplay (shortcut, autostart, app files), keeps your
+  settings, and keeps using the display driver FreeDisplay installed. The
+  tablet app updates in place and shows the new name.
 
 ### Added
 - **Portrait mode.** New **Orientation** setting (Auto, Landscape, Portrait) in
@@ -21,7 +27,7 @@ All notable changes to FreeDisplay. Versions follow [Semantic Versioning](https:
   moved back instead, so that monitor stays on.
 - README: requirements, quick start from GitHub, troubleshooting.
 
-### Changed
+### Improved
 - The tablet reports the largest picture its decoder supports at its own
   shape, so devices with stricter decoder limits no longer get a stream they
   can't play.
@@ -29,8 +35,8 @@ All notable changes to FreeDisplay. Versions follow [Semantic Versioning](https:
   screen when it disconnects" (same setting, on by default).
 
 ### Upgrading from 1.2.0
-- Run the new `FreeDisplay.exe`; the tablet app updates itself on the next
-  connection. The new screen shapes take effect after your next restart.
+- Run `Tandem.exe` and choose Yes; it replaces FreeDisplay. The tablet app
+  updates itself on the next connection. The new screen shapes take effect after your next restart.
 
 ## [1.2.0] - 2026-10-15
 
@@ -81,9 +87,9 @@ First release.
   rights, starts with Windows, installs and updates the tablet app by itself.
 - Tray menu: touch and pen switches, video quality presets, start with Windows.
 
-[1.3.0]: https://github.com/sykrmzffr/FreeDisplay/compare/v1.2.0...v1.3.0
-[1.2.0]: https://github.com/sykrmzffr/FreeDisplay/compare/v1.1.2...v1.2.0
-[1.1.2]: https://github.com/sykrmzffr/FreeDisplay/compare/v1.1.1...v1.1.2
-[1.1.1]: https://github.com/sykrmzffr/FreeDisplay/releases/tag/v1.1.1
-[1.1.0]: https://github.com/sykrmzffr/FreeDisplay/commits/main
-[1.0.0]: https://github.com/sykrmzffr/FreeDisplay/commits/main
+[1.3.0]: https://github.com/sykrmzffr/Tandem/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/sykrmzffr/Tandem/compare/v1.1.2...v1.2.0
+[1.1.2]: https://github.com/sykrmzffr/Tandem/compare/v1.1.1...v1.1.2
+[1.1.1]: https://github.com/sykrmzffr/Tandem/releases/tag/v1.1.1
+[1.1.0]: https://github.com/sykrmzffr/Tandem/commits/main
+[1.0.0]: https://github.com/sykrmzffr/Tandem/commits/main

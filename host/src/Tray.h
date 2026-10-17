@@ -3,7 +3,7 @@
 #include <functional>
 #include <string>
 
-// Posted to the tray window by a second copy of FreeDisplay: show the settings window.
+// Posted to the tray window by a second copy of Tandem: show the settings window.
 constexpr UINT kShowSettingsMsg = WM_APP + 4;
 
 // Notification-area icon, its menu and the settings window. Runs on the UI thread.

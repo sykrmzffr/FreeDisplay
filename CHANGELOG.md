@@ -34,6 +34,11 @@ All notable changes to Tandem (called FreeDisplay up to version 1.2.0). Versions
 - "Move windows back when the tablet disconnects" is now "Turn off the tablet
   screen when it disconnects" (same setting, on by default).
 
+### Fixed
+- The tablet no longer flashes its waiting screen (with a soft picture for a
+  moment afterwards) every few minutes: short pauses on the USB link are now
+  ridden out instead of restarting the stream.
+
 ### Upgrading from 1.2.0
 - Run `Tandem.exe` and choose Yes; it replaces FreeDisplay. The tablet app
   updates itself on the next connection. The new screen shapes take effect after your next restart.
